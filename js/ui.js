@@ -77,12 +77,14 @@ function buildBestiary() {
     grid.appendChild(card);
     // render the creature with the game's own painter
     const ctx = cv.getContext('2d');
-    ctx.translate(64, key === 'abomination' ? 58 : 66);
-    const sc = key === 'abomination' ? 1.5 : 2.6;
+    const isAbo = key === 'abomination';
+    ctx.translate(64, isAbo ? 98 : 92);
+    const sc = isAbo ? 1.4 : 2.3;
     ctx.scale(sc, sc);
     const fake = {
       type: key, def, r: def.r, t: 0.9, phase: 0, alpha: 0.85,
-      rot: 0, state: 'stalk', telegraphed: false, hp: 1, maxHp: 1,
+      rot: Math.PI * 0.5, state: 'stalk', telegraphed: false, hp: 1, maxHp: 1,
+      walkPhase: 0.6,
     };
     ctx.globalAlpha = key === 'wraith' ? 0.9 : 1;
     drawEnemy(ctx, fake, 0);

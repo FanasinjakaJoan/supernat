@@ -1,6 +1,15 @@
 // ─── SUPERNAT · the supernatural bestiary ──────────────────────────────────
 import { TAU, rand, angleTo } from './utils.js';
 import { getGlow } from './particles.js';
+import {
+  updateHumanoidLocomotion,
+  drawShamblerZombie,
+  drawVampireHuman,
+  drawBansheeHuman,
+  drawAbominationColossus,
+  drawHellhoundBeast,
+  drawWraithPhantom,
+} from './humanoid.js';
 
 export const ENEMY_TYPES = {
   shambler: {
@@ -57,7 +66,7 @@ export function pickWaveEnemy(n) {
   return 'shambler';
 }
 
-// ─── per-type AI ────────────────────────────────────────────────────────────
+// ─── per-type AI with realistic displacement tracking ──────────────────────
 export function updateEnemy(e, g, dt) {
   const p = g.player;
   const dx = p.x - e.x, dy = p.y - e.y;
@@ -65,6 +74,8 @@ export function updateEnemy(e, g, dt) {
   const nx = dx / d, ny = dy / d;
   e.t += dt;
   e.rot = angleTo(e.x, e.y, p.x, p.y);
+
+  const prevX = e.x, prevY = e.y;
 
   switch (e.type) {
     case 'shambler': {
@@ -148,175 +159,49 @@ export function updateEnemy(e, g, dt) {
       break;
     }
   }
+
+  // Locomotion velocity tracking
+  e.vx = (e.x - prevX) / (dt || 0.016);
+  e.vy = (e.y - prevY) / (dt || 0.016);
+  updateHumanoidLocomotion(e, dt, false);
 }
 
-// ─── vector-art renderers (also used by the bestiary UI) ───────────────────
+// ─── 2.5D Humanoid & Creature Vector Renderers ─────────────────────────────
 function glowUnder(ctx, e, color, r, a) {
   const s = getGlow(color);
+  ctx.save();
   ctx.globalCompositeOperation = 'lighter';
   const ga = ctx.globalAlpha;
   ctx.globalAlpha = ga * a;
-  ctx.drawImage(s, -r, -r, r * 2, r * 2);
-  ctx.globalAlpha = ga;
-  ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(s, -r, -r * 0.5, r * 2, r);
+  ctx.restore();
 }
 
 export function drawEnemy(ctx, e, t) {
   switch (e.type) {
-    case 'shambler': {
-      const sway = Math.sin(e.t * 5 + e.phase) * 0.12;
-      glowUnder(ctx, e, e.def.glow, e.r * 1.9, 0.16);
-      ctx.rotate(e.rot + sway);
-      // arms reaching forward
-      const arm = Math.sin(e.t * 6 + e.phase) * 3;
-      ctx.strokeStyle = '#4d7a30'; ctx.lineWidth = 4; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(2, -7); ctx.lineTo(e.r + 6, -6 + arm); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(2, 7); ctx.lineTo(e.r + 6, 6 - arm); ctx.stroke();
-      // body
-      ctx.fillStyle = '#577f37';
-      ctx.beginPath(); ctx.arc(0, 0, e.r, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#3f5f28';
-      ctx.beginPath(); ctx.arc(-4, 4, e.r * 0.55, 0, TAU); ctx.fill();
-      // head
-      ctx.fillStyle = '#6b9a44';
-      ctx.beginPath(); ctx.arc(e.r * 0.4, 0, e.r * 0.55, 0, TAU); ctx.fill();
-      // eyes
-      ctx.fillStyle = '#c8ff7a';
-      ctx.beginPath(); ctx.arc(e.r * 0.62, -3.4, 1.9, 0, TAU); ctx.fill();
-      ctx.beginPath(); ctx.arc(e.r * 0.62, 3.4, 1.9, 0, TAU); ctx.fill();
+    case 'shambler':
+      glowUnder(ctx, e, e.def.glow, e.r * 1.6, 0.16);
+      drawShamblerZombie(ctx, e, t);
       break;
-    }
-    case 'wraith': {
-      glowUnder(ctx, e, e.def.glow, e.r * 2.6, 0.4);
-      ctx.rotate(e.rot + Math.PI / 2);
-      const w = e.t * 6 + e.phase;
-      ctx.fillStyle = 'rgba(123,233,255,0.55)';
-      ctx.beginPath();
-      ctx.moveTo(0, -e.r * 1.25);
-      ctx.quadraticCurveTo(e.r, -e.r * 0.3, e.r * 0.75, e.r * 0.7);
-      ctx.quadraticCurveTo(e.r * 0.3, e.r * (0.45 + Math.sin(w) * 0.25), 0, e.r * (1.15 + Math.sin(w * 1.3) * 0.2));
-      ctx.quadraticCurveTo(-e.r * 0.3, e.r * (0.45 + Math.cos(w) * 0.25), -e.r * 0.75, e.r * 0.7);
-      ctx.quadraticCurveTo(-e.r, -e.r * 0.3, 0, -e.r * 1.25);
-      ctx.fill();
-      ctx.fillStyle = '#06202c';
-      ctx.beginPath(); ctx.arc(0, -e.r * 0.35, e.r * 0.42, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#d9fbff';
-      ctx.beginPath(); ctx.arc(-2.6, -e.r * 0.4, 1.7, 0, TAU); ctx.fill();
-      ctx.beginPath(); ctx.arc(2.6, -e.r * 0.4, 1.7, 0, TAU); ctx.fill();
+    case 'wraith':
+      glowUnder(ctx, e, e.def.glow, e.r * 2.2, 0.35);
+      drawWraithPhantom(ctx, e, t);
       break;
-    }
-    case 'hound': {
-      glowUnder(ctx, e, e.def.glow, e.r * 2.1, e.state === 'charge' ? 0.5 : 0.24);
-      ctx.rotate(e.rot);
-      const run = Math.sin(e.t * 16) * (e.state === 'charge' ? 4 : 1.5);
-      // legs
-      ctx.strokeStyle = '#5e1d10'; ctx.lineWidth = 3; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(-6, -6); ctx.lineTo(-9 + run, -11); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-6, 6); ctx.lineTo(-9 - run, 11); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(6, -6); ctx.lineTo(9 - run, -11); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(6, 6); ctx.lineTo(9 + run, 11); ctx.stroke();
-      // body
-      ctx.fillStyle = e.state === 'windup' ? '#8a2f14' : '#701f10';
-      ctx.beginPath(); ctx.ellipse(0, 0, e.r * 1.2, e.r * 0.72, 0, 0, TAU); ctx.fill();
-      // head
-      ctx.fillStyle = '#8a2f14';
-      ctx.beginPath();
-      ctx.moveTo(e.r * 0.7, -5); ctx.lineTo(e.r * 1.75, 0); ctx.lineTo(e.r * 0.7, 5);
-      ctx.closePath(); ctx.fill();
-      // ember eyes + back cracks
-      ctx.fillStyle = '#ffd23d';
-      ctx.beginPath(); ctx.arc(e.r * 1.05, -3, 1.6, 0, TAU); ctx.fill();
-      ctx.beginPath(); ctx.arc(e.r * 1.05, 3, 1.6, 0, TAU); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,140,40,0.8)'; ctx.lineWidth = 1.4;
-      ctx.beginPath(); ctx.moveTo(-8, -2); ctx.lineTo(-2, 0); ctx.lineTo(-7, 3); ctx.stroke();
+    case 'hound':
+      glowUnder(ctx, e, e.def.glow, e.r * 1.8, e.state === 'charge' ? 0.45 : 0.22);
+      drawHellhoundBeast(ctx, e, t);
       break;
-    }
-    case 'vampire': {
-      glowUnder(ctx, e, e.def.glow, e.r * 2, 0.22);
-      ctx.rotate(e.rot + Math.PI / 2);
-      // cape
-      ctx.fillStyle = '#3d0f22';
-      ctx.beginPath();
-      ctx.moveTo(0, -e.r * 0.6);
-      ctx.quadraticCurveTo(e.r * 1.5, e.r * 0.4, e.r * 0.9, e.r * 1.35);
-      ctx.lineTo(-e.r * 0.9, e.r * 1.35);
-      ctx.quadraticCurveTo(-e.r * 1.5, e.r * 0.4, 0, -e.r * 0.6);
-      ctx.fill();
-      // body
-      ctx.fillStyle = '#171019';
-      ctx.beginPath(); ctx.arc(0, 0, e.r * 0.8, 0, TAU); ctx.fill();
-      // collar
-      ctx.fillStyle = '#5c1030';
-      ctx.beginPath();
-      ctx.moveTo(-e.r * 0.75, -e.r * 0.35); ctx.lineTo(-e.r * 0.2, -e.r * 0.95); ctx.lineTo(-e.r * 0.05, -e.r * 0.2);
-      ctx.closePath(); ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(e.r * 0.75, -e.r * 0.35); ctx.lineTo(e.r * 0.2, -e.r * 0.95); ctx.lineTo(e.r * 0.05, -e.r * 0.2);
-      ctx.closePath(); ctx.fill();
-      // pale head + eyes
-      ctx.fillStyle = '#d8cfc4';
-      ctx.beginPath(); ctx.arc(0, -e.r * 0.42, e.r * 0.44, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#ff2e4d';
-      ctx.beginPath(); ctx.arc(-2.4, -e.r * 0.46, 1.7, 0, TAU); ctx.fill();
-      ctx.beginPath(); ctx.arc(2.4, -e.r * 0.46, 1.7, 0, TAU); ctx.fill();
+    case 'vampire':
+      glowUnder(ctx, e, e.def.glow, e.r * 1.8, 0.22);
+      drawVampireHuman(ctx, e, t);
       break;
-    }
-    case 'banshee': {
-      glowUnder(ctx, e, e.def.glow, e.r * 2.5, e.telegraphed ? 0.55 : 0.3);
-      ctx.rotate(e.rot + Math.PI / 2);
-      const w = e.t * 5 + e.phase;
-      // trailing robe
-      ctx.fillStyle = 'rgba(176,108,255,0.5)';
-      ctx.beginPath();
-      ctx.moveTo(0, -e.r * 1.1);
-      ctx.quadraticCurveTo(e.r * 1.05, 0, e.r * 0.55, e.r * (1.3 + Math.sin(w) * 0.25));
-      ctx.quadraticCurveTo(0, e.r * (0.9 + Math.cos(w * 1.2) * 0.2), -e.r * 0.55, e.r * (1.3 + Math.cos(w) * 0.25));
-      ctx.quadraticCurveTo(-e.r * 1.05, 0, 0, -e.r * 1.1);
-      ctx.fill();
-      // hood
-      ctx.fillStyle = '#2a1440';
-      ctx.beginPath(); ctx.arc(0, -e.r * 0.35, e.r * 0.52, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#0b0413';
-      ctx.beginPath(); ctx.arc(0, -e.r * 0.28, e.r * 0.34, 0, TAU); ctx.fill();
-      // wailing mouth
-      const mouth = e.telegraphed ? 1.7 : 1;
-      ctx.fillStyle = '#e9d5ff';
-      ctx.beginPath(); ctx.ellipse(0, -e.r * 0.16, 2.2 * mouth, 3.4 * mouth, 0, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#d9b8ff';
-      ctx.beginPath(); ctx.arc(-3, -e.r * 0.5, 1.4, 0, TAU); ctx.fill();
-      ctx.beginPath(); ctx.arc(3, -e.r * 0.5, 1.4, 0, TAU); ctx.fill();
+    case 'banshee':
+      glowUnder(ctx, e, e.def.glow, e.r * 2.2, e.telegraphed ? 0.5 : 0.28);
+      drawBansheeHuman(ctx, e, t);
       break;
-    }
-    case 'abomination': {
-      glowUnder(ctx, e, e.def.glow, e.r * 1.9, 0.2);
-      ctx.rotate(e.rot + Math.PI / 2);
-      const sway = Math.sin(e.t * 2.2) * 0.06;
-      ctx.rotate(sway);
-      // stitched bulk
-      ctx.fillStyle = '#465c26';
-      ctx.beginPath(); ctx.arc(-e.r * 0.3, e.r * 0.15, e.r * 0.78, 0, TAU); ctx.fill();
-      ctx.beginPath(); ctx.arc(e.r * 0.32, e.r * 0.2, e.r * 0.66, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#5b7631';
-      ctx.beginPath(); ctx.arc(0, -e.r * 0.15, e.r * 0.85, 0, TAU); ctx.fill();
-      // stitched seam
-      ctx.strokeStyle = '#241a10'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(0, -e.r * 0.9); ctx.quadraticCurveTo(e.r * 0.2, 0, -e.r * 0.1, e.r * 0.8); ctx.stroke();
-      ctx.lineWidth = 1.4;
-      for (let i = -2; i <= 2; i++) {
-        ctx.beginPath(); ctx.moveTo(i * 6 - 3, i * 5); ctx.lineTo(i * 6 + 3, i * 5 + 4); ctx.stroke();
-      }
-      // many eyes
-      ctx.fillStyle = '#d6ff8a';
-      const eyes = [[-8, -12], [3, -16], [10, -8], [-3, -4], [7, 2]];
-      for (const [ex, ey] of eyes) {
-        ctx.beginPath(); ctx.arc(ex, ey, 2 + Math.sin(e.t * 3 + ex) * 0.5, 0, TAU); ctx.fill();
-      }
-      // hanging arms
-      ctx.strokeStyle = '#3c5120'; ctx.lineWidth = 7; ctx.lineCap = 'round';
-      const arm = Math.sin(e.t * 2.2 + 1) * 4;
-      ctx.beginPath(); ctx.moveTo(-e.r * 0.75, 0); ctx.lineTo(-e.r * 1.15, e.r * 0.8 + arm); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(e.r * 0.75, 0); ctx.lineTo(e.r * 1.15, e.r * 0.8 - arm); ctx.stroke();
+    case 'abomination':
+      glowUnder(ctx, e, e.def.glow, e.r * 1.8, 0.2);
+      drawAbominationColossus(ctx, e, t);
       break;
-    }
   }
 }

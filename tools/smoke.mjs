@@ -135,6 +135,8 @@ pump(30);
 ok(game.player.hp <= game.player.maxHp, 'pickup applied without crash');
 
 // damage + pause toggle
+game.player.iframes = 0;
+game.player.buffs.shield = 0;
 game.damagePlayer(15, game.player.x + 10, game.player.y);
 ok(game.player.hp <= game.player.maxHp - 14, 'damage applied');
 game.togglePause();
