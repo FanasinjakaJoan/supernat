@@ -44,6 +44,7 @@ kbd {
 
 #stage { position: fixed; inset: 0; touch-action: none; }
 #game { position: absolute; inset: 0; display: block; }
+body.in-run #game { cursor: crosshair; }
 
 /* film grain / scanlines */
 #grain {

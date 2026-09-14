@@ -29,6 +29,9 @@ export const Input = {
 
     // ── pointer handling (mouse + multi-touch) ──
     stage.addEventListener('pointerdown', (e) => {
+      this.mouse.isScreen = true;
+      this.mouse.x = e.clientX;
+      this.mouse.y = e.clientY;
       if (e.pointerType === 'touch') {
         this.touchMode = true;
         document.body.classList.add('touch');
@@ -46,6 +49,7 @@ export const Input = {
     });
 
     addEventListener('pointermove', (e) => {
+      this.mouse.isScreen = true;
       this.mouse.x = e.clientX;
       this.mouse.y = e.clientY;
       this._drag(this.moveStick, e);

@@ -90,7 +90,7 @@ export class ParticleSys {
     }
   }
 
-  draw(ctx) {
+  draw(ctx, proj = null) {
     const p = this.p;
     // pass 1: soft smoke (normal blend)
     for (let i = 0; i < p.length; i++) {
@@ -100,7 +100,8 @@ export class ParticleSys {
       ctx.globalAlpha = a;
       ctx.fillStyle = o.color;
       ctx.beginPath();
-      ctx.arc(o.x, o.y, o.size * (1.6 - o.life / o.max), 0, TAU);
+      const pos = proj ? proj(o.x, o.y, o.z || 8) : { x: o.x, y: o.y };
+      ctx.arc(pos.x, pos.y, o.size * (1.6 - o.life / o.max), 0, TAU);
       ctx.fill();
     }
     // pass 2: additive sparks / rings / shells
@@ -108,25 +109,28 @@ export class ParticleSys {
     for (let i = 0; i < p.length; i++) {
       const o = p[i];
       const k = o.life / o.max;
+      const pos = proj ? proj(o.x, o.y, o.z || 0) : { x: o.x, y: o.y };
       if (o.kind === 'spark') {
         ctx.globalAlpha = k;
         ctx.strokeStyle = o.color;
         ctx.lineWidth = Math.max(0.6, o.size * k);
         ctx.beginPath();
-        ctx.moveTo(o.x, o.y);
-        ctx.lineTo(o.x - o.vx * 0.02, o.y - o.vy * 0.02);
+        ctx.moveTo(pos.x, pos.y);
+        const prev = proj ? proj(o.x - o.vx * 0.02, o.y - o.vy * 0.02, o.z || 0) : { x: o.x - o.vx * 0.02, y: o.y - o.vy * 0.02 };
+        ctx.lineTo(prev.x, prev.y);
         ctx.stroke();
       } else if (o.kind === 'ring') {
         ctx.globalAlpha = k * 0.9;
         ctx.strokeStyle = o.color;
         ctx.lineWidth = 2.4 * k + 0.6;
         ctx.beginPath();
-        ctx.arc(o.x, o.y, o.size * (1.35 - k), 0, TAU);
+        // 2.5D elliptical ring on the ground
+        ctx.ellipse(pos.x, pos.y, o.size * (1.35 - k), o.size * (1.35 - k) * 0.5, 0, 0, TAU);
         ctx.stroke();
       } else if (o.kind === 'shell') {
         ctx.globalAlpha = k;
         ctx.fillStyle = o.color;
-        ctx.fillRect(o.x - 1.4, o.y - 1, 2.8, 2);
+        ctx.fillRect(pos.x - 1.4, pos.y - 1, 2.8, 2);
       }
     }
     ctx.globalCompositeOperation = 'source-over';
@@ -150,7 +154,7 @@ export class FloatText {
       t.vy *= 1 - 1.6 * dt;
     }
   }
-  draw(ctx) {
+  draw(ctx, proj = null) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const t of this.list) {
@@ -159,9 +163,10 @@ export class FloatText {
       ctx.font = `700 ${t.size}px Rajdhani, 'Segoe UI', sans-serif`;
       ctx.strokeStyle = 'rgba(0,0,0,0.7)';
       ctx.lineWidth = 3;
-      ctx.strokeText(t.txt, t.x, t.y);
+      const pos = proj ? proj(t.x, t.y, 40) : { x: t.x, y: t.y };
+      ctx.strokeText(t.txt, pos.x, pos.y);
       ctx.fillStyle = t.color;
-      ctx.fillText(t.txt, t.x, t.y);
+      ctx.fillText(t.txt, pos.x, pos.y);
     }
     ctx.globalAlpha = 1;
   }
