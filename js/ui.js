@@ -3,6 +3,7 @@ import { SFX } from './audio.js';
 import { Input } from './input.js';
 import { ENEMY_TYPES, ENEMY_LIST } from './enemies.js';
 import { drawEnemy } from './enemies.js';
+import { getAnjanaharySector } from './data/anjanaharyMapData.js';
 
 const $ = (id) => document.getElementById(id);
 const LS_KEY = 'supernat.highscores.v1';
@@ -40,7 +41,7 @@ function addScore(entry) {
 }
 function scoreRows(list, highlight = -1) {
   if (!list.length)
-    return '<div class="empty">No hunters have fallen yet. Be the first.</div>';
+    return '<div class="empty">No hunters have fallen yet in Anjanahary. Be the first.</div>';
   return list.map((e, i) => `
     <div class="srow ${i === highlight ? 'hl' : ''}">
       <span class="rank r${Math.min(i, 3)}">${String(i + 1).padStart(2, '0')}</span>
@@ -121,7 +122,7 @@ function renderMenuTop() {
   const top = loadScores().slice(0, 3);
   els.menuTop.innerHTML = top.length
     ? top.map((e, i) => `<span class="mt"><b>${escapeHtml(e.n)}</b> ${e.s.toLocaleString()}</span>`).join('')
-    : '<span class="mt dim">No records yet — the city waits.</span>';
+    : '<span class="mt dim">No records yet — Anjanahary awaits.</span>';
 }
 
 function fmtTime(s) {
@@ -135,7 +136,7 @@ export function initUI(g) {
   els = {
     stage: $('stage'), hud: $('hud'), hurt: $('hurt'),
     scoreVal: $('score-val'), multVal: $('mult-val'), comboFill: $('combo-fill'),
-    waveVal: $('wave-val'), hpFill: $('hp-fill'), hpText: $('hp-text'), buffs: $('buffs'),
+    waveVal: $('wave-val'), sectorVal: $('sector-val'), hpFill: $('hp-fill'), hpText: $('hp-text'), buffs: $('buffs'),
     banner: $('banner'), bannerTitle: $('banner-title'), bannerSub: $('banner-sub'),
     menu: $('menu'), menuMain: $('menu-main'), menuTop: $('menu-top'),
     panelBest: $('panel-best'), bestGrid: $('best-grid'),
@@ -280,6 +281,9 @@ export function uiUpdate(rawDt) {
     els.multVal.classList.toggle('hot', game.mult >= 3);
     els.comboFill.style.width = (game.mult > 1 ? (game.comboTimer / 3) * 100 : 0) + '%';
     els.waveVal.textContent = 'WAVE ' + game.wave;
+    if (els.sectorVal) {
+      els.sectorVal.textContent = '📍 ' + getAnjanaharySector(p.x, p.y);
+    }
     const hpFrac = Math.max(0, p.hp / p.maxHp);
     els.hpFill.style.width = (hpFrac * 100) + '%';
     els.hpFill.classList.toggle('low', hpFrac < 0.3);

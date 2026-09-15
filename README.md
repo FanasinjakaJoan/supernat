@@ -1,14 +1,23 @@
-# SUPERNAT · City of the Fallen · 2.5D Isometric
+# SUPERNAT · Cimetière d'Anjanahary & Ampasapito · 2.5D Isometric
 
-An apocalyptic 2.5D isometric survival shooter that runs entirely in the browser — no build
-step, no dependencies. The Rift tore open above Meridian City; the dead rose,
-old myths took flesh, and you are the last Hunter of the Veil Order.
+An apocalyptic 2.5D isometric survival shooter set in the historical necropolis of
+**Anjanahary & Ampasapito** in Antananarivo, Madagascar — zero build step, zero dependencies.
+The dimensional Rift has torn open above the 12-hectare Malagasy necropolis. The dead of 66
+historical parcels and the fallen of the Carré Militaire have risen from their granite vaults
+(*fasana*). You are the last Hunter holding the Great Gate (*Vavahady Lehibe*).
 
-Actors feature realistic human anatomical forms and City Z-style survival locomotion:
-stride kinematics, directional footsteps, pelvis vertical bobbing, spine aiming twist,
-recoil kickback, tactical combat roll/dash, and 2.5D depth-sorted urban cover.
+The map geometry and architecture are transformed using real geospatial data scraped from
+OpenStreetMap and historical archives of Antananarivo Renivohitra:
+- **Làlana Rasoamiaramanana** (Rue Rasoamiaramanana) northern perimeter road connecting Anjanahary to Ampasapito
+- **Vavahady Lehibe** (Great North Gate) with red-brick pillars and wrought iron gates
+- **Allée Centrale Pavée** (OSM way 45980202) granite cobblestone central avenue lined with Italian Cypress
+- **Carré Militaire** (Lots 38, 38bis, 39) with the central Monument aux Morts (*Tsangambato*) and war crosses
+- **Faritra Fasana 1-66** multi-tiered granite Merina family crypts (*fasana*) and 1880 *Fasam-bahiny* colonial vaults
+- **Terminus Ampasapito** with artisanal tomb stonecutter workshops (*Mpanao Vato Fasana*), Taxi-Be 154 minibus (Mercedes 207D), and Taxi-Ville 4L
+- **Highland Madagascar flora** with blooming violet Jacaranda trees, lemon eucalyptus, and fallen petal carpets
+- **Malagasy red laterite soil** (*tany mena*) with winding dirt footpaths (*elakelan-trano fasana*)
 
-![theme](https://img.shields.io/badge/theme-apocalyptic%20supernatural-9dff20)
+![theme](https://img.shields.io/badge/theme-madagascar%20supernatural-9dff20)
 ![perspective](https://img.shields.io/badge/perspective-2.5D%20isometric-b06cff)
 ![fps](https://img.shields.io/badge/target-60fps-ff2e4d)
 ![deps](https://img.shields.io/badge/dependencies-zero-9dff20)
@@ -36,8 +45,8 @@ touch controls on mobile.
 
 ## The loop
 
-Rift portals tear open and wave after wave of supernatural life pours into the
-streets. Kills feed a **combo multiplier** (up to x10) that decays in 3 seconds,
+Rift portals tear open and wave after wave of supernatural life pours from the
+tombs. Kills feed a **combo multiplier** (up to x10) that decays in 3 seconds,
 pickups drop from the fallen (heal, rapid fire, triple shot, piercing rounds,
 veil ward), and every fourth wave an **Abomination** arrives — kill it or it
 births more dead.
@@ -46,37 +55,42 @@ Juice baked in: screen shake, hit-stop, slow-motion death cam, particle bursts,
 persistent blood decals, dash ghost trails, muzzle flash, floating combat text,
 procedural WebAudio SFX with an ambient drone, and haptics on mobile.
 
-## The Bestiary
+## The Bestiary (Spirits & Legends of Anjanahary)
 
-The in-game bestiary documents each form of supernatural life:
+The in-game bestiary documents each form of supernatural life rising in the cemetery:
 
-- **Shambler** — the risen dead
-- **Wraith** — restless spirit, phases and drifts
-- **Hellhound** — stalks, then charges
-- **Vampire** — strafes between bullets
-- **Banshee** — screams spirit shards from afar
-- **Abomination** — fused colossus, spawns shamblers on death
+- **Shambler** (*Lolo Vokatra*) — the risen dead from the granite vaults
+- **Wraith** (*Angatra*) — ancestral restless spirit drifting through stone walls
+- **Hellhound** (*Alika Masiaka*) — tomb stalker corrupted by red laterite rift energy
+- **Vampire** (*Mpitsentsitra Liana*) — ancient aristocrats of the 1880 Fasam-bahiny
+- **Banshee** (*Matotoa*) — wailing spirit screaming spirit shards across the Carré Militaire
+- **Abomination** (*Biby Goavana*) — fused colossus walking through gunfire
 
-## High scores
+## Scraped Data & Map Structure
 
-Top 8 runs are stored locally (`localStorage`) with name, score, wave and kill
-count — engrave your name on the wall when you fall.
+```
+data/ampasapito_anjanahary_data.json   scraped OSM vector boundary, nodes, thoroughfares, & sectors
+tools/scrape_anjanahary.mjs            data processor / scraper generator
+tools/test_anjanahary_map.mjs          automated test suite for map geometry, sectors, and 2.5D rendering
+tools/smoke.mjs                        headless engine and simulation tests
+```
 
 ## Tech
 
 Vanilla ES modules + Canvas 2D isometric rendering. Real-time 2:1 isometric coordinate projection,
-bidirectional screen-to-world mapping, depth-sorted 2.5D urban geometry, articulated human locomotion,
-pre-rendered city streets, capped particle counts and a DPR cap keep it at 60 fps on mobile.
+bidirectional screen-to-world mapping, depth-sorted 2.5D necropolis geometry, articulated human locomotion,
+pre-rendered Madagascar ground plane, capped particle counts and a DPR cap keep it at 60 fps on mobile.
 
 ```
-js/main.js      boot + fixed loop
-js/game.js      2.5D state machine, combat, waves, isometric pipeline
-js/iso.js       isometric projection math, camera, 3D urban props
-js/humanoid.js  realistic human actors & locomotion kinematics (City Z style)
-js/enemies.js   bestiary: stats, AI, 2.5D humanoid & creature renderers
-js/particles.js 2.5D particles, floating text, glow sprites
-js/input.js     keyboard / mouse / multi-touch twin sticks
-js/audio.js     procedural WebAudio SFX + ambience
-js/ui.js        HUD, screens, bestiary UI, high scores
-tools/smoke.mjs headless simulation test (node tools/smoke.mjs)
+js/main.js                  boot + fixed loop
+js/game.js                  2.5D state machine, Anjanahary ground renderer, combat, waves
+js/iso.js                   isometric projection math, camera, 2.5D Malagasy props (fasana, monument, etc.)
+js/data/anjanaharyMapData.js real OSM coordinates, thoroughfares, sector classifier, Malagasy lore
+js/humanoid.js              realistic human actors & locomotion kinematics (City Z style)
+js/enemies.js               bestiary: stats, AI, 2.5D humanoid & creature renderers
+js/particles.js             2.5D particles, floating text, glow sprites
+js/input.js                 keyboard / mouse / multi-touch twin sticks
+js/audio.js                 procedural WebAudio SFX + ambience
+js/ui.js                    HUD with dynamic Anjanahary sector indicator, screens, bestiary UI
 ```
+

@@ -1,4 +1,4 @@
-// ─── SUPERNAT · balance & palette ──────────────────────────────────────────
+// ─── SUPERNAT · balance, palette, & Anjanahary Madagascar flavor ───────────
 export const CFG = {
   player: {
     speed: 258,
@@ -28,7 +28,7 @@ export const CFG = {
 };
 
 export const PAL = {
-  bg: '#0c0913',
+  bg: '#140a08',        // Malagasy nocturnal red laterite tone
   acid: '#9dff20',
   toxic: '#54d44a',
   blood: '#ff2e4d',
@@ -36,15 +36,18 @@ export const PAL = {
   ghost: '#7be9ff',
   violet: '#b06cff',
   bone: '#e8e0cf',
+  laterite: '#b8442e',  // Antananarivo red clay
+  jacaranda: '#9d68db', // Highland jacaranda flower
+  granite: '#6b6375',   // Merina tomb stone
 };
 
 export const WAVE_FLAVOR = [
-  'They smell your blood.',
-  'The Rift pulses brighter.',
-  'The dead do not tire.',
-  'Meridian weeps green tears.',
-  'No one is coming.',
-  'Dawn is a lie.',
-  'The Veil is torn wide open.',
-  'Feed the ash.',
+  "Cimetière d'Anjanahary · The dead awaken under the blood moon.",
+  "Carré Militaire · The fallen Tirailleurs rise from Lot 38.",
+  "Faritra Fasana 66 · Ny Angatra sy ny Lolo vokatra mananika ny tamboho.",
+  "Vavahady Lehibe · Hold the Great Gate against the Abomination!",
+  "Fasam-bahiny 1880 · Ancient colonial shadows stir in the stone crypts.",
+  "Terminus Ampasapito · Red dust rises over the stonecutter workshops.",
+  "Alin'ny Fasana · The Kinoly claws through the granite steps.",
+  "Tapitra ny andro · Dawn will not reach Anjanahary. Stand firm among the tombs!",
 ];
