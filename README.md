@@ -59,6 +59,31 @@ interpolation + dead-reckoning for 60 FPS-smooth remotes; ping/pong
 heartbeats, host migration, and empty-room cleanup. See `server.py` for the
 JSON protocol and `tools/mp_*` for the automated multiplayer test suites.
 
+## Deploy (public link for other PCs)
+
+> ⚠️ **Not PythonAnywhere**: it officially supports WSGI apps only — FastAPI
+> and WebSockets are still experimental/beta there with no web UI, so the
+> real-time hunt can't reliably run on it. Use a host with first-class
+> WebSocket support instead (both free, no credit card):
+
+**Render.com — easiest (free tier, `render.yaml` included)**
+1. Push this branch to GitHub (already on `arena/01a0a592-supernat`).
+2. Go to **dashboard.render.com → New → Web Service**, connect the repo,
+   pick the branch.
+3. Build command: `pip install -r requirements.txt`
+4. Start command: `uvicorn server:app --host 0.0.0.0 --port $PORT` (single
+   worker — rooms live in process memory, never add `--workers N`)
+5. Plan **Free** → Deploy. You get `https://supernat.onrender.com`.
+6. Share that URL: the game auto-connects its WebSocket (`wss://…/ws`) —
+   other PCs just open it, enter your room code, and hunt.
+7. Note: free tier sleeps after 15 min idle; first visit wakes it in ~30–60 s.
+
+**Hugging Face Spaces — Docker alternative (free, stays warm longer)**
+1. Create a Space → SDK **Docker** → blank template.
+2. Push this repo to the Space (it already has a `Dockerfile`; HF injects
+   `$PORT=7860`, WebSockets supported).
+3. Open `https://<you>-supernat.hf.space` and share it.
+
 ## Controls
 
 | Action | Desktop | Touch |

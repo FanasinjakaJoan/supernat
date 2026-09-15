@@ -1,0 +1,18 @@
+# ─── SUPERNAT · Render blueprint (free tier OK — websockets supported) ─────
+# Manual setup also works: New → Web Service → this repo/branch, then the
+# build/start commands below. Pick branch `arena/01a0a592-supernat` (or main
+# after merging). Free tier sleeps after 15 min idle (~30-60 s cold start).
+services:
+  - type: web
+    name: supernat
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # IMPORTANT: single uvicorn worker — game rooms live in process memory,
+    # so multiple workers would split players across isolated lobbies.
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
