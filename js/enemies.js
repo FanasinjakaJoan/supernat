@@ -68,7 +68,8 @@ export function pickWaveEnemy(n) {
 
 // ─── per-type AI with realistic displacement tracking ──────────────────────
 export function updateEnemy(e, g, dt) {
-  const p = g.player;
+  // Multiplayer: hunt the nearest alive hunter (local + Other Hunters).
+  const p = (typeof g.getTargetFor === 'function' && g.getTargetFor(e)) || g.player;
   const dx = p.x - e.x, dy = p.y - e.y;
   const d = Math.hypot(dx, dy) || 1;
   const nx = dx / d, ny = dy / d;

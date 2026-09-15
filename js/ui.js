@@ -4,17 +4,22 @@ import { Input } from './input.js';
 import { ENEMY_TYPES, ENEMY_LIST } from './enemies.js';
 import { drawEnemy } from './enemies.js';
 import { getAnjanaharySector } from './data/anjanaharyMapData.js';
+import { randomHunterName } from './net.js';
 
 const $ = (id) => document.getElementById(id);
 const LS_KEY = 'supernat.highscores.v1';
 const MAX_SCORES = 8;
 
 let game = null;
+let net = null; // NetClient (optional; null in pure-solo contexts)
 let els = {};
 let lastState = '';
 let buffCache = '';
 let displayScore = 0;
 let pendingName = null; // awaiting high-score name entry
+let mpRosterCache = '';
+let mpHudCache = '';
+let mpHudTimer = 0;
 
 // ── high scores ─────────────────────────────────────────────────────────────
 function loadScores() {
@@ -131,8 +136,9 @@ function fmtTime(s) {
 }
 
 // ── boot ────────────────────────────────────────────────────────────────────
-export function initUI(g) {
+export function initUI(g, netClient = null) {
   game = g;
+  net = netClient || null;
   els = {
     stage: $('stage'), hud: $('hud'), hurt: $('hurt'),
     scoreVal: $('score-val'), multVal: $('mult-val'), comboFill: $('combo-fill'),
@@ -149,11 +155,18 @@ export function initUI(g) {
     aimBase: $('aim-base'), aimKnob: $('aim-knob'),
     btnDash: $('btn-dash'),
     btnSound: $('btn-sound'), btnHudMute: $('btn-hud-mute'),
+    // multiplayer
+    mpDot: $('mp-dot'), mpName: $('mp-name'), mpCode: $('mp-code'),
+    mpStatus: $('mp-status'), mpRoom: $('mp-room'), mpRoomCode: $('mp-room-code'),
+    mpRole: $('mp-role'), mpPlayers: $('mp-players'),
+    hudMp: $('hud-mp'), mpBadgeRoom: $('mp-badge-room'), mpBadgeCount: $('mp-badge-count'),
+    mpBadgePing: $('mp-badge-ping'), mpBadgeTeam: $('mp-badge-team'), mpRoster: $('mp-roster'),
   };
 
   buildBestiary();
   setPanel('main');
   syncSoundLabel();
+  initMultiplayer();
 
   // game → ui hooks
   game.onGameOver = (stats) => {
@@ -189,6 +202,10 @@ export function initUI(g) {
       case 'pause': game.togglePause(); break;
       case 'mute': SFX.toggleMute(); syncSoundLabel(); break;
       case 'save-name': commitName(); break;
+      case 'mp-create': mpCreate(); break;
+      case 'mp-join': mpJoin(); break;
+      case 'mp-leave': mpLeave(); break;
+      case 'mp-copy': mpCopyLink(); break;
     }
   });
 
@@ -201,6 +218,13 @@ export function initUI(g) {
   addEventListener('keydown', (e) => {
     if (e.target === els.nameInput) {
       if (e.code === 'Enter') commitName();
+      return;
+    }
+    if (e.target === els.mpCode || e.target === els.mpName) {
+      if (e.code === 'Enter') {
+        if (e.target === els.mpCode) mpJoin();
+        else mpCreate();
+      }
       return;
     }
     if (e.code === 'KeyM') { SFX.toggleMute(); syncSoundLabel(); }
@@ -297,6 +321,8 @@ export function uiUpdate(rawDt) {
     if (bhtml !== buffCache) { buffCache = bhtml; els.buffs.innerHTML = bhtml; }
   }
 
+  syncMpHud(rawDt, inRun);
+
   // touch stick visuals
   if (Input.touchMode) {
     placeStick(els.stickBase, els.stickKnob, Input.moveStick);
@@ -314,5 +340,195 @@ function placeStick(base, knob, stick) {
   } else {
     base.classList.remove('on');
     knob.style.transform = 'translate(0px, 0px)';
+  }
+}
+
+// ── multiplayer UI ──────────────────────────────────────────────────────────
+function mpName() {
+  const v = (els.mpName && els.mpName.value ? els.mpName.value : '').trim().toUpperCase().slice(0, 12);
+  if (v) return v;
+  const gen = randomHunterName();
+  try { if (els.mpName) els.mpName.value = gen; } catch (e) { /* headless */ }
+  try { localStorage.setItem('supernat.hunter', gen); } catch (e) { /* ignore */ }
+  return gen;
+}
+
+function mpSetStatus(text, cls = '') {
+  if (!els.mpStatus) return;
+  els.mpStatus.textContent = text;
+  els.mpStatus.className = 'mp-status' + (cls ? ' ' + cls : '');
+}
+
+function mpSetDot(mode) {
+  if (!els.mpDot) return;
+  els.mpDot.className = 'mp-dot ' + (mode || 'off');
+}
+
+function initMultiplayer() {
+  // restore hunter name + prefilled room from main.js (?room= link)
+  try {
+    const saved = localStorage.getItem('supernat.hunter');
+    if (saved && els.mpName && !els.mpName.value) els.mpName.value = saved;
+  } catch (e) { /* ignore */ }
+  if (!net) return;
+  net.onWelcome = () => {
+    mpSetDot('on');
+    if (els.mpRoomCode) els.mpRoomCode.textContent = net.roomCode || '----';
+    if (els.mpRole) els.mpRole.textContent = net.isHost ? '♛ HOST' : '◈ HUNTER';
+    show(els.mpRoom, true);
+    mpSetStatus(
+      net.isHost
+        ? 'RIFT OPEN — share the code, then BEGIN THE HUNT'
+        : 'JOINED THE PACK — press BEGIN THE HUNT to deploy',
+      'ok'
+    );
+    renderMpRoster(net.rosterList());
+    try {
+      if (els.mpName) localStorage.setItem('supernat.hunter', mpName());
+    } catch (e) { /* ignore */ }
+  };
+  net.onRoster = (list) => renderMpRoster(list);
+  net.onPlayerJoin = (msg) => {
+    showBanner(`${escapeHtml(msg.name || 'HUNTER')} JOINED`, 'Another hunter enters the necropolis', 'clear');
+    SFX.buff();
+  };
+  net.onPlayerLeave = (msg) => {
+    renderMpRoster(net.rosterList());
+    SFX.click();
+  };
+  net.onHostChanged = (msg) => {
+    if (els.mpRole) els.mpRole.textContent = net.isHost ? '♛ HOST' : '◈ HUNTER';
+    if (net.isHost) showBanner('♛ YOU ANCHOR THE RIFT', 'The hunt survives through you. Hold the Gate!');
+    else showBanner('NEW HOST', `${(msg && msg.name) || 'A hunter'} anchors the Rift`, 'clear');
+  };
+  net.onError = (msg) => mpSetStatus('⚠ ' + msg, 'err');
+  net.onDisconnect = () => {
+    mpSetDot('off');
+    show(els.mpRoom, false);
+    mpSetStatus('SIGNAL LOST — continuing solo. Rejoin to regroup.', 'err');
+    renderMpRoster([]);
+    mpRosterCache = '';
+    mpHudCache = '';
+  };
+}
+
+async function mpCreate() {
+  if (!net) { mpSetStatus('MULTIPLAYER UNAVAILABLE IN THIS BUILD', 'err'); return; }
+  if (net.connected) { mpSetStatus('ALREADY IN ROOM ' + net.roomCode, 'ok'); return; }
+  mpSetDot('busy');
+  mpSetStatus('OPENING RIFT…');
+  try {
+    const { room } = await net.connect({ name: mpName(), create: true });
+    SFX.buff();
+    mpSetStatus(`RIFT OPEN · ROOM ${room} — share the code!`, 'ok');
+  } catch (e) {
+    mpSetDot('off');
+    mpSetStatus('⚠ ' + (e && e.message ? e.message : 'server unreachable') + ' — is server.py running?', 'err');
+  }
+}
+
+async function mpJoin() {
+  if (!net) { mpSetStatus('MULTIPLAYER UNAVAILABLE IN THIS BUILD', 'err'); return; }
+  if (net.connected) { mpSetStatus('ALREADY IN ROOM ' + net.roomCode, 'ok'); return; }
+  const code = (els.mpCode && els.mpCode.value ? els.mpCode.value : '').trim().toUpperCase();
+  if (!code) { mpSetStatus('ENTER A 4-LETTER ROOM CODE FIRST', 'err'); return; }
+  mpSetDot('busy');
+  mpSetStatus(`JOINING ${code}…`);
+  try {
+    await net.connect({ name: mpName(), room: code, create: false });
+    SFX.buff();
+  } catch (e) {
+    mpSetDot('off');
+    mpSetStatus('⚠ ' + (e && e.message ? e.message : 'join failed'), 'err');
+  }
+}
+
+function mpLeave() {
+  if (!net) return;
+  try { net.disconnect(); } catch (e) { /* ignore */ }
+  mpSetDot('off');
+  show(els.mpRoom, false);
+  mpSetStatus('OFFLINE · SOLO HUNT — run the Python server for co-op');
+  renderMpRoster([]);
+  mpRosterCache = '';
+  mpHudCache = '';
+}
+
+function mpCopyLink() {
+  if (!net || !net.roomCode) return;
+  let link = `ROOM ${net.roomCode}`;
+  try {
+    link = `${location.origin}${location.pathname}?room=${net.roomCode}`;
+  } catch (e) { /* headless */ }
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(
+        () => mpSetStatus('HUNT LINK COPIED — send it to your pack', 'ok'),
+        () => mpSetStatus(link, 'ok')
+      );
+    } else {
+      mpSetStatus(link, 'ok');
+    }
+  } catch (e) {
+    mpSetStatus(link, 'ok');
+  }
+}
+
+function renderMpRoster(list) {
+  if (!els.mpPlayers) return;
+  const key = (list || []).map((p) => `${p.id}:${p.name}:${p.isHost ? 1 : 0}:${p.self ? 1 : 0}`).join('|');
+  if (key === mpRosterCache) return;
+  mpRosterCache = key;
+  if (!list || !list.length) {
+    els.mpPlayers.innerHTML = '';
+    return;
+  }
+  els.mpPlayers.innerHTML = list.map((p) =>
+    `<span class="mp-tag${p.self ? ' self' : ''}${p.isHost ? ' host' : ''}${p.stale ? ' stale' : ''}">` +
+    `${p.isHost ? '♛ ' : ''}${escapeHtml(p.name)}${p.self ? ' (YOU)' : ''}</span>`
+  ).join('');
+}
+
+/** Per-frame HUD sync: room code, hunter count, ping, team score, ally vitals. */
+function syncMpHud(rawDt, inRun) {
+  const online = !!(net && net.connected);
+  if (els.hudMp) show(els.hudMp, online && inRun);
+  if (!online || !inRun) {
+    if (els.mpRoster && mpHudCache !== '') { mpHudCache = ''; els.mpRoster.innerHTML = ''; }
+    return;
+  }
+  mpHudTimer -= rawDt;
+  if (mpHudTimer > 0) return;
+  mpHudTimer = 0.25; // DOM updates @4 Hz (canvas stays 60 FPS)
+
+  if (els.mpBadgeRoom) els.mpBadgeRoom.textContent = `⌂ ${net.roomCode || '----'}`;
+  if (els.mpBadgeCount) els.mpBadgeCount.textContent = `👥 ${net.roster.size || 1}`;
+  if (els.mpBadgePing) {
+    const ping = net.pingMs;
+    els.mpBadgePing.textContent = `📶 ${ping == null ? '--' : ping + 'ms'}`;
+    els.mpBadgePing.classList.toggle('ping-warn', ping != null && ping > 120 && ping <= 250);
+    els.mpBadgePing.classList.toggle('ping-bad', ping != null && ping > 250);
+  }
+  if (els.mpBadgeTeam) {
+    try {
+      els.mpBadgeTeam.textContent = `TEAM ${game.teamScore().toLocaleString()}`;
+    } catch (e) { /* ignore */ }
+  }
+  // ally vitality chips
+  if (els.mpRoster) {
+    let roster = [];
+    try { roster = net.rosterList().filter((p) => !p.self); } catch (e) { /* ignore */ }
+    const key = roster.map((p) =>
+      `${p.id}:${Math.ceil(p.hp == null ? -1 : p.hp)}:${p.alive === false ? 0 : 1}`
+    ).join('|');
+    if (key !== mpHudCache) {
+      mpHudCache = key;
+      els.mpRoster.innerHTML = roster.map((p) => {
+        const frac = p.hp == null ? 1 : Math.max(0, Math.min(1, p.hp / (p.maxHp || 100)));
+        const down = p.alive === false || (p.hp != null && p.hp <= 0);
+        return `<span class="mp-hp${down ? ' down' : ''}">${escapeHtml(p.name)}` +
+          `<i><b style="width:${Math.round(frac * 100)}%"></b></i></span>`;
+      }).join('');
+    }
   }
 }

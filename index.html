@@ -32,6 +32,13 @@
       <div class="hud-center">
         <div id="wave-val" class="wave-tag">WAVE 1</div>
         <div id="sector-val" class="sector-tag">📍 ANJANAHARY · ALLÉE CENTRALE</div>
+        <div id="hud-mp" class="hud-mp hidden">
+          <span id="mp-badge-room" class="mp-badge">⌂ ----</span>
+          <span id="mp-badge-count" class="mp-badge">👥 1</span>
+          <span id="mp-badge-ping" class="mp-badge">📶 --</span>
+          <span id="mp-badge-team" class="mp-badge team">TEAM 0</span>
+        </div>
+        <div id="mp-roster" class="mp-roster"></div>
       </div>
       <div class="hud-right">
         <button class="icon-btn" data-action="mute" id="btn-hud-mute" data-ui>🔊</button>
@@ -72,6 +79,25 @@
             <button class="btn" data-action="panel-scores">MEMORIAL WALL</button>
             <button class="btn ghost" data-action="mute" id="btn-sound">♪ ON</button>
           </div>
+        </div>
+        <div class="mp-panel" id="mp-panel">
+          <div class="mp-title">⚔ CO-OP HUNT · ANJANAHARY NECROPOLIS <span id="mp-dot" class="mp-dot off"></span></div>
+          <div class="mp-row">
+            <input id="mp-name" maxlength="12" placeholder="HUNTER NAME" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="mp-row">
+            <button class="btn" data-action="mp-create">＋ CREATE</button>
+            <input id="mp-code" maxlength="8" placeholder="CODE" autocomplete="off" spellcheck="false">
+            <button class="btn" data-action="mp-join">➤ JOIN</button>
+          </div>
+          <div id="mp-status" class="mp-status">OFFLINE · SOLO HUNT — run the Python server for co-op</div>
+          <div id="mp-room" class="mp-room hidden">
+            <span>ROOM <b id="mp-room-code">----</b></span>
+            <span id="mp-role" class="mp-role"></span>
+            <button class="btn ghost tiny" data-action="mp-copy">COPY LINK</button>
+            <button class="btn ghost tiny" data-action="mp-leave">LEAVE</button>
+          </div>
+          <div id="mp-players" class="mp-players"></div>
         </div>
         <div class="hints">
           <div class="hint desktop-hint">

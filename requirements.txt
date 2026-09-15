@@ -1,0 +1,4 @@
+# SUPERNAT · multiplayer backend
+fastapi>=0.110
+uvicorn[standard]>=0.29
+websockets>=12.0
