@@ -18,6 +18,7 @@ import {
   updateHumanoidLocomotion,
   drawHunterHuman,
   drawTacticalReticle,
+  accentForHunter,
 } from './humanoid.js';
 import { ANJANAHARY_GEO, getAnjanaharySector } from './data/anjanaharyMapData.js';
 
@@ -53,6 +54,18 @@ export class Game {
     this.isoScale = ISO_SCALE;
     this.camX = 1140;
     this.camY = 920;
+
+    // ── multiplayer (offline-first; wired by main.js via setNet) ──
+    this.net = null;
+    this.remotePlayers = new Map(); // id → interpolated Other Hunter state
+    this._netEnemyId = 0;
+    this._netPickupId = 0;
+    this._recentDeaths = [];        // host: kills since last world snapshot
+    this._takenPickups = new Map(); // guest: netId → ts (dedupe optimistic takes)
+    this._creditedKills = new Map();// guest: netId → ts (dedupe kill FX)
+    this._lastWaveSeen = 0;
+    this._announcedClear = false;
+    this._wasHost = true;
 
     // Atmospheric embers, jacaranda petals & drifting fog in Antananarivo night
     this.embers = [];
@@ -166,7 +179,17 @@ export class Game {
     this.camX = startX;
     this.camY = startY;
     this.intermission = 0;
-    this.nextWave();
+    this._wasHost = this.isHost();
+    if (this.isGuest()) {
+      // guests follow the host's waves via authoritative snapshots
+      this.wave = 0;
+      this.spawnQueue = [];
+      this._lastWaveSeen = 0;
+      this._announcedClear = false;
+      this._recentDeaths = [];
+    } else {
+      this.nextWave();
+    }
     SFX.unlock();
   }
 
@@ -185,6 +208,337 @@ export class Game {
   }
 
   emit(type, data) { this.events.push({ type, data }); }
+
+  // ── multiplayer core ──────────────────────────────────────────────────────
+  /** Attach a NetClient (see js/net.js). Null-safe: game stays solo offline. */
+  setNet(net) {
+    this.net = net || null;
+    if (!net) return;
+    net.onHit = (msg) => {
+      if (this.isHost() && this.state === 'playing') this.applyRemoteHit(msg);
+    };
+    net.onPickupTake = (msg) => {
+      if (!this.isHost()) return;
+      const id = msg.pickup | 0;
+      const i = this.pickups.findIndex((pk) => pk.netId === id);
+      if (i >= 0) this.pickups.splice(i, 1);
+    };
+    net.onKillCredit = (msg) => {
+      if (!this.isGuest()) return;
+      this.applyKillCredit(msg);
+    };
+    net.onHostChanged = () => this.handleHostChanged();
+    net.onDisconnect = () => this.handleNetDisconnect();
+    net.onPlayerLeave = (msg) => {
+      this.remotePlayers.delete(msg.id);
+    };
+  }
+
+  isOnline() { return !!(this.net && this.net.connected); }
+  isHost() { return !this.isOnline() || this.net.isHost; }
+  isGuest() { return this.isOnline() && !this.net.isHost; }
+
+  /** Nearest alive hunter for enemy AI (local + interpolated Other Hunters). */
+  getTargetFor(e) {
+    if (!this.isOnline() || !this.player) return this.player;
+    let best = null, bestD2 = Infinity;
+    const consider = (x, y) => {
+      const d2 = dist2(e.x, e.y, x, y);
+      if (d2 < bestD2) { bestD2 = d2; best = { x, y }; }
+    };
+    if (this.player.hp > 0 && (this.state === 'playing' || this.state === 'dying')) {
+      consider(this.player.x, this.player.y);
+    }
+    for (const rp of this.remotePlayers.values()) {
+      if (rp.stale || rp.alive === false || (rp.hp || 0) <= 0) continue;
+      consider(rp.x, rp.y);
+    }
+    return best || this.player;
+  }
+
+  teamScore() {
+    let total = this.score || 0;
+    for (const rp of this.remotePlayers.values()) total += (rp.score | 0);
+    return total;
+  }
+
+  teamKills() {
+    let total = this.kills || 0;
+    for (const rp of this.remotePlayers.values()) total += (rp.kills | 0);
+    return total;
+  }
+
+  /** Local player state upload @30 Hz (pos, aim, actions, hp, combo/score). */
+  syncNetUpload() {
+    if (!this.isOnline() || !this.player) return;
+    const p = this.player;
+    this.net.sendState({
+      x: Math.round(p.x * 10) / 10,
+      y: Math.round(p.y * 10) / 10,
+      vx: Math.round(p.vx),
+      vy: Math.round(p.vy),
+      ang: Math.round(p.ang * 1000) / 1000,
+      hp: Math.round(p.hp),
+      maxHp: p.maxHp,
+      dashT: Math.round((p.dashT || 0) * 100) / 100,
+      iframes: Math.round((p.iframes || 0) * 100) / 100,
+      firing: Input.isFiring() && this.state === 'playing',
+      mult: this.mult || 1,
+      score: this.score || 0,
+      kills: this.kills || 0,
+      walkPhase: Math.round((p.walkPhase || 0) * 100) / 100,
+      moveAng: Math.round((p.moveAng || 0) * 1000) / 1000,
+      isMoving: !!p.isMoving,
+      alive: this.state === 'playing',
+      buffs: {
+        rapid: Math.round((p.buffs.rapid || 0) * 10) / 10,
+        spread: Math.round((p.buffs.spread || 0) * 10) / 10,
+        pierce: Math.round((p.buffs.pierce || 0) * 10) / 10,
+        shield: Math.round((p.buffs.shield || 0) * 10) / 10,
+      },
+    });
+    // host publishes the authoritative world @15 Hz
+    if (this.isHost() && this.state !== 'menu') {
+      this.net.sendHostSnapshot(this.buildHostSnapshot());
+    }
+  }
+
+  /** Refresh interpolated Other Hunters from the network buffers (60 FPS smooth). */
+  syncRemotePlayers() {
+    if (!this.isOnline()) {
+      if (this.remotePlayers.size) this.remotePlayers.clear();
+      return;
+    }
+    this.remotePlayers = this.net.getRemotePlayers();
+  }
+
+  buildHostSnapshot() {
+    const snap = {
+      wave: this.wave || 0,
+      intermission: Math.round((this.intermission || 0) * 100) / 100,
+      spawnLeft: (this.spawnQueue || []).length,
+      running: this.state === 'playing' || this.state === 'dying' || this.state === 'paused',
+      enemies: this.enemies.map((e) => ({
+        id: e.netId || 0,
+        type: e.type,
+        x: Math.round(e.x * 10) / 10,
+        y: Math.round(e.y * 10) / 10,
+        hp: Math.round(e.hp * 10) / 10,
+        maxHp: Math.round(e.maxHp * 10) / 10,
+        rot: Math.round((e.rot || 0) * 1000) / 1000,
+        state: e.state || 'stalk',
+        telegraphed: !!e.telegraphed,
+        alpha: e.alpha !== undefined ? Math.round(e.alpha * 100) / 100 : 1,
+        walkPhase: Math.round((e.walkPhase || 0) * 100) / 100,
+        vx: Math.round(e.vx || 0),
+        vy: Math.round(e.vy || 0),
+      })),
+      portals: this.portals.map((po) => ({
+        x: Math.round(po.x), y: Math.round(po.y), type: po.type,
+        t: Math.round(po.t * 100) / 100,
+      })),
+      pickups: this.pickups.map((pk) => ({
+        id: pk.netId || 0, kind: pk.kind,
+        x: Math.round(pk.x), y: Math.round(pk.y),
+        t: Math.round(pk.t * 10) / 10,
+      })),
+      ebullets: this.ebullets.map((b) => ({
+        x: Math.round(b.x), y: Math.round(b.y),
+        vx: Math.round(b.vx), vy: Math.round(b.vy),
+      })),
+      deaths: this._recentDeaths,
+    };
+    this._recentDeaths = [];
+    return snap;
+  }
+
+  /** Guest: merge the host-authoritative world (interpolated enemy motion). */
+  applyNetWorld(dt) {
+    const world = this.net ? this.net.getWorld() : null;
+    if (!world) return;
+    const now = performance.now();
+
+    // wave banners follow the host
+    if (world.wave !== this._lastWaveSeen) {
+      if (world.wave > 0 && this.state === 'playing') {
+        this.wave = world.wave;
+        this.emit('wave', { n: world.wave, flavor: WAVE_FLAVOR[(world.wave - 1) % WAVE_FLAVOR.length] });
+        SFX.wave();
+        this._announcedClear = false;
+      }
+      this._lastWaveSeen = world.wave;
+    }
+    if (world.intermission > 0 && !this._announcedClear && this.state === 'playing') {
+      this._announcedClear = true;
+      this.emit('waveClear', { n: this.wave });
+    }
+
+    // prune dedupe caches
+    for (const [id, ts] of this._takenPickups) {
+      if (now - ts > 2500) this._takenPickups.delete(id);
+    }
+    for (const [id, ts] of this._creditedKills) {
+      if (now - ts > 2500) this._creditedKills.delete(id);
+    }
+
+    // enemies: match by netId, ease positions toward authoritative targets
+    const seen = new Set();
+    const k = 1 - Math.exp(-14 * dt); // smoothing factor → 60 FPS smoothness
+    for (const se of (world.enemies || [])) {
+      seen.add(se.id);
+      let e = this.enemies.find((x) => x.netId === se.id);
+      if (!e) {
+        const def = ENEMY_TYPES[se.type] || ENEMY_TYPES.shambler;
+        e = {
+          type: se.type in ENEMY_TYPES ? se.type : 'shambler',
+          def, netId: se.id,
+          x: se.x, y: se.y, hp: se.hp, maxHp: se.maxHp,
+          r: def.r, speed: def.speed, rot: se.rot || 0,
+          flash: 0, phase: rand(TAU), t: rand(10), alpha: se.alpha,
+          touchCd: 0, state: se.state, chargeT: 1, shootT: 2,
+          telegraphed: !!se.telegraphed, lockAng: 0,
+          walkPhase: se.walkPhase || 0, flinch: 0, isMoving: true,
+          vx: se.vx || 0, vy: se.vy || 0,
+        };
+        this.enemies.push(e);
+      } else {
+        // snap on teleport, ease otherwise (jitter-proof interpolation)
+        const d2 = dist2(e.x, e.y, se.x, se.y);
+        if (d2 > 220 * 220) { e.x = se.x; e.y = se.y; }
+        else {
+          e.x = lerp(e.x, se.x, k);
+          e.y = lerp(e.y, se.y, k);
+        }
+        e.hp = se.hp; e.maxHp = se.maxHp;
+        e.rot = se.rot; e.state = se.state;
+        e.telegraphed = !!se.telegraphed;
+        e.alpha = se.alpha;
+        e.walkPhase = se.walkPhase;
+        e.vx = se.vx || 0; e.vy = se.vy || 0;
+        e.flash = Math.max(0, e.flash - dt);
+        e.touchCd = Math.max(0, e.touchCd - dt);
+      }
+    }
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      if (!seen.has(this.enemies[i].netId)) this.enemies.splice(i, 1);
+    }
+
+    // portals / pickups / enemy bullets: direct authoritative copies
+    this.portals = (world.portals || []).map((po) => ({
+      x: po.x, y: po.y, type: po.type, t: po.t, total: PORTAL_TIME,
+    }));
+    this.pickups = (world.pickups || [])
+      .filter((pk) => !this._takenPickups.has(pk.id))
+      .map((pk) => ({ x: pk.x, y: pk.y, kind: pk.kind, t: pk.t, ph: (pk.id * 1.7) % TAU, netId: pk.id }));
+    for (const pk of this.pickups) pk.ph += dt * 3;
+    this.ebullets = (world.ebullets || []).map((b) => ({
+      x: b.x, y: b.y, z: 18, vx: b.vx, vy: b.vy, life: 3.2, dmg: 9, r: 6,
+    }));
+
+    // death FX for kills we didn't score ourselves (shooter got kill_credit)
+    for (const d of (world.deaths || [])) {
+      if (this._creditedKills.has(d.id)) continue;
+      const def = ENEMY_TYPES[d.type] || ENEMY_TYPES.shambler;
+      this.particles.burst(d.x, d.y, def.color, d.big ? 30 : 14, d.big ? 300 : 200, 0.55, 2.6);
+      this.particles.ring(d.x, d.y, def.glow, d.big ? 80 : 40, 0.35);
+      this.bloodDecal(d.x, d.y, d.big);
+      if (d.big) SFX.bigKill(); else SFX.kill();
+    }
+  }
+
+  /** Host: apply a guest's damage claim against an authoritative enemy. */
+  applyRemoteHit(msg) {
+    const e = this.enemies.find((x) => x.netId === (msg.enemy | 0));
+    if (!e || e.dead) return;
+    this.damageEnemy(e, msg.dmg, msg.ang || 0, !!msg.crit, { remoteId: msg.from, mult: msg.mult | 0 });
+  }
+
+  /** Guest: confirmed kill score from the host (authoritative, no double-count). */
+  applyKillCredit(msg) {
+    const now = performance.now ? performance.now() : Date.now();
+    if (msg.netId) this._creditedKills.set(msg.netId, now);
+    this.kills++;
+    this.comboKills++;
+    this.comboTimer = CFG.combo.window;
+    if (this.comboKills % CFG.combo.killsPerMult === 0 && this.mult < CFG.combo.maxMult) {
+      this.mult++;
+      this.bestMult = Math.max(this.bestMult, this.mult);
+      this.texts.add(this.player.x, this.player.y - 34, `COMBO x${this.mult}`, '#9dff20', 18);
+      SFX.buff();
+    }
+    const pts = Math.round((msg.base || 10) * (this.mult || 1));
+    this.score += pts;
+    this.texts.add((msg.x || 0) + rand(-6, 6), (msg.y || 0) - 18, `+${pts}`, '#c8ff9e', 14);
+    const def = ENEMY_TYPES[msg.enemy] || ENEMY_TYPES.shambler;
+    const big = !!msg.big;
+    this.particles.burst(msg.x, msg.y, def.color, big ? 30 : 14, big ? 300 : 200, 0.6, 2.6);
+    this.particles.ring(msg.x, msg.y, def.glow, big ? 80 : 40, 0.35);
+    this.bloodDecal(msg.x, msg.y, big);
+    this.shake(big ? 8 : 2.5, big ? 0.3 : 0.12);
+    big ? SFX.bigKill() : SFX.kill();
+  }
+
+  /** Host migration / role change mid-run. */
+  handleHostChanged() {
+    if (!this.net || !this.player) return;
+    if (this.isHost() && !this._wasHost) {
+      // guest → host: take over the hunt from the last known world state
+      const world = this.net.getWorld && this.net.getWorld();
+      if (world) {
+        this.wave = Math.max(this.wave, world.wave || 1);
+        this.intermission = 0;
+        const need = world.spawnLeft | 0;
+        this.spawnQueue = this.spawnQueue || [];
+        for (let i = 0; i < need; i++) this.spawnQueue.push(pickWaveEnemy(this.wave));
+      } else if (!this.wave) {
+        this.wave = 0;
+        this.nextWave();
+      }
+      this._recentDeaths = [];
+      this.texts.add(this.player.x, this.player.y - 40, '♛ YOU ARE THE HOST', '#ffd23d', 17);
+      this.emit('wave', { n: this.wave, flavor: 'You now anchor the Rift. Hold the Gate!' });
+      if (this.net.getWorld) this.net.forceWorldSend(this.buildHostSnapshot());
+    } else if (!this.isHost() && this._wasHost) {
+      // host → guest (rare): stop spawning, await authoritative snapshots
+      this.spawnQueue = [];
+      this._lastWaveSeen = this.wave;
+    }
+    this._wasHost = this.isHost();
+  }
+
+  /** Server lost mid-run: fall back to solo seamlessly. */
+  handleNetDisconnect() {
+    this.remotePlayers.clear();
+    if (this.state === 'playing' || this.state === 'dying') {
+      if (!this.enemies.length && !(this.spawnQueue || []).length && !this.portals.length) {
+        this.intermission = 1.2; // resume local waves from current position
+      }
+      if (this.player) {
+        this.texts.add(this.player.x, this.player.y - 40, 'SIGNAL LOST · SOLO HUNT', '#ff9d3d', 16);
+      }
+    }
+    this._wasHost = true;
+  }
+
+  /** Co-op respawn: the pack survives as long as one hunter stands. */
+  respawnLocal() {
+    const p = this.player;
+    const P = CFG.player;
+    p.hp = p.maxHp;
+    p.x = clamp(1140 + rand(-70, 70), 50, this.arenaW - 50);
+    p.y = clamp(920 + rand(-70, 70), 50, this.arenaH - 50);
+    p.vx = 0; p.vy = 0;
+    p.iframes = 2.5;
+    p.dashT = 0; p.dashCd = 0;
+    p.buffs.rapid = 0; p.buffs.spread = 0; p.buffs.pierce = 0; p.buffs.shield = 0;
+    this.camX = p.x; this.camY = p.y;
+    this.state = 'playing';
+    this.timeScale = 1;
+    this.particles.ring(p.x, p.y, '#9dff20', 60, 0.5);
+    this.particles.burst(p.x, p.y, '#9dff20', 18, 220, 0.5, 2.4);
+    this.emit('wave', { n: this.wave, flavor: 'Death spits you back. The pack needs you!' });
+    SFX.buff();
+  }
 
   // ── waves ─────────────────────────────────────────────────────────────────
   nextWave() {
@@ -276,6 +630,7 @@ export class Game {
     const hpMul = 1 + (this.wave - 1) * 0.09;
     const e = {
       type, def, x, y,
+      netId: ++this._netEnemyId, // stable id for host-authoritative hit claims
       hp: def.hp * hpMul, maxHp: def.hp * hpMul,
       r: def.r, speed: def.speed * rand(0.9, 1.15),
       rot: 0, flash: 0, phase: rand(TAU), t: rand(10), alpha: 1,
@@ -325,7 +680,7 @@ export class Game {
     SFX.shoot();
   }
 
-  damageEnemy(e, dmg, ang, crit) {
+  damageEnemy(e, dmg, ang, crit, scorer = null) {
     e.hp -= dmg;
     e.flash = 0.12;
     e.flinch = 1.0;
@@ -333,24 +688,39 @@ export class Game {
     e.y += Math.sin(ang) * 3.4;
     this.particles.burst(e.x, e.y, e.def.color, crit ? 8 : 4, 150, 0.32, 2.2, ang + Math.PI, 1.6);
     if (crit) this.texts.add(e.x + rand(-8, 8), e.y - e.r - 6, `${dmg | 0}!`, '#ff9d3d', 16);
-    if (e.hp <= 0) this.killEnemy(e);
+    if (e.hp <= 0) this.killEnemy(e, scorer);
     else if (this._hitSndCd <= 0) { SFX.hit(); this._hitSndCd = 0.045; }
   }
 
-  killEnemy(e) {
+  killEnemy(e, scorer = null) {
     e.dead = true;
-    this.kills++;
-    this.comboKills++;
-    this.comboTimer = CFG.combo.window;
-    if (this.comboKills % CFG.combo.killsPerMult === 0 && this.mult < CFG.combo.maxMult) {
-      this.mult++;
-      this.bestMult = Math.max(this.bestMult, this.mult);
-      this.texts.add(this.player.x, this.player.y - 34, `COMBO x${this.mult}`, '#9dff20', 18);
-      SFX.buff();
+    const remoteKill = !!(scorer && scorer.remoteId && this.isOnline());
+    if (remoteKill) {
+      // co-op: score belongs to the guest hunter that landed the killing blow
+      if (this.net) {
+        this.net.sendKillCredit(scorer.remoteId, {
+          enemy: e.type, base: e.def.score, x: e.x, y: e.y,
+          big: e.type === 'abomination', netId: e.netId || 0,
+        });
+      }
+    } else {
+      this.kills++;
+      this.comboKills++;
+      this.comboTimer = CFG.combo.window;
+      if (this.comboKills % CFG.combo.killsPerMult === 0 && this.mult < CFG.combo.maxMult) {
+        this.mult++;
+        this.bestMult = Math.max(this.bestMult, this.mult);
+        this.texts.add(this.player.x, this.player.y - 34, `COMBO x${this.mult}`, '#9dff20', 18);
+        SFX.buff();
+      }
+      const pts = Math.round(e.def.score * this.mult);
+      this.score += pts;
+      this.texts.add(e.x + rand(-6, 6), e.y - e.r - 4, `+${pts}`, '#c8ff9e', 14);
     }
-    const pts = Math.round(e.def.score * this.mult);
-    this.score += pts;
-    this.texts.add(e.x + rand(-6, 6), e.y - e.r - 4, `+${pts}`, '#c8ff9e', 14);
+    // shared death record → guests render kill FX from the world snapshot
+    if (this.isOnline() && this.isHost() && this._recentDeaths.length < 20) {
+      this._recentDeaths.push({ id: e.netId || 0, type: e.type, x: Math.round(e.x), y: Math.round(e.y), big: e.type === 'abomination' });
+    }
 
     const big = e.type === 'abomination';
     this.particles.burst(e.x, e.y, e.def.color, big ? 36 : 15, big ? 320 : 210, big ? 0.8 : 0.55, big ? 3.6 : 2.6);
@@ -385,7 +755,7 @@ export class Game {
       kind = roll < 0.32 ? 'heal' : roll < 0.52 ? 'rapid' : roll < 0.72 ? 'spread'
         : roll < 0.86 ? 'pierce' : 'shield';
     }
-    this.pickups.push({ x, y, kind, t: CFG.pickup.life, ph: rand(TAU) });
+    this.pickups.push({ x, y, kind, t: CFG.pickup.life, ph: rand(TAU), netId: ++this._netPickupId });
   }
 
   damagePlayer(dmg, fromX, fromY) {
@@ -431,6 +801,11 @@ export class Game {
     const p = this.player;
     this.runT += dt;
     this._hitSndCd = (this._hitSndCd || 0) - dt;
+
+    // ── multiplayer sync: 30 Hz upload, interpolated Other Hunters, host world
+    this.syncRemotePlayers();
+    this.syncNetUpload();
+    if (this.isGuest()) this.applyNetWorld(dt);
 
     p.iframes = Math.max(0, p.iframes - dt);
     p.flashT = Math.max(0, p.flashT - dt);
@@ -539,7 +914,20 @@ export class Game {
         const rr = e.r + 4;
         if (dist2(b.x, b.y, e.x, e.y) < rr * rr) {
           const crit = chance(CFG.gun.critChance);
-          this.damageEnemy(e, b.dmg * (crit ? 2 : 1), Math.atan2(b.vy, b.vx), crit);
+          const bang = Math.atan2(b.vy, b.vx);
+          const bdmg = b.dmg * (crit ? 2 : 1);
+          if (this.isGuest()) {
+            // host-authoritative: claim damage, render hit FX optimistically
+            if (e.netId && this.net) {
+              this.net.sendHit(e.netId, Math.round(bdmg), crit, Math.round(bang * 1000) / 1000, this.mult || 1);
+            }
+            e.flash = 0.12;
+            this.particles.burst(e.x, e.y, e.def.color, crit ? 6 : 3, 150, 0.3, 2.2, bang + Math.PI, 1.6);
+            if (crit) this.texts.add(e.x + rand(-8, 8), e.y - e.r - 6, `${bdmg | 0}!`, '#ff9d3d', 16);
+            if (this._hitSndCd <= 0) { SFX.hit(); this._hitSndCd = 0.045; }
+          } else {
+            this.damageEnemy(e, bdmg, bang, crit);
+          }
           if (b.pierce > 0) { b.pierce--; b.hit = e; b.dmg *= 0.8; }
           else { this.bullets.splice(i, 1); }
           break;
@@ -548,6 +936,20 @@ export class Game {
     }
 
     // ── enemies ──
+    if (this.isGuest()) {
+      // guests: authoritative motion arrives via host snapshots (see applyNetWorld);
+      // contact damage stays local so every hunter feels bites instantly.
+      for (const e of this.enemies) {
+        if (e.dead) continue;
+        e.flash = Math.max(0, e.flash - dt);
+        e.touchCd = Math.max(0, e.touchCd - dt);
+        const rrG = e.r + p.r - 2;
+        if (e.touchCd <= 0 && dist2(e.x, e.y, p.x, p.y) < rrG * rrG) {
+          e.touchCd = 0.6;
+          this.damagePlayer(e.def.dmg, e.x, e.y);
+        }
+      }
+    } else {
     this.updatePortals(dt);
     for (const e of this.enemies) {
       if (e.dead) continue;
@@ -581,6 +983,7 @@ export class Game {
     }
     for (let i = this.enemies.length - 1; i >= 0; i--)
       if (this.enemies[i].dead) this.enemies.splice(i, 1);
+    } // end host/guest enemy branch
 
     // ── enemy bullets ──
     for (let i = this.ebullets.length - 1; i >= 0; i--) {
@@ -611,11 +1014,16 @@ export class Game {
       }
       if (d2 < 26 * 26) {
         this.pickups.splice(i, 1);
+        if (this.isGuest() && pk.netId && this.net) {
+          this.net.sendPickupTake(pk.netId);
+          const nowTs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+          this._takenPickups.set(pk.netId, nowTs);
+        }
         this.applyPickup(pk.kind);
       }
     }
 
-    if (this.state === 'playing') this.updateWave(dt);
+    if (this.state === 'playing' && !this.isGuest()) this.updateWave(dt);
     this.particles.update(dt);
     this.texts.update(dt);
     this.shakeT = Math.max(0, this.shakeT - dt);
@@ -646,12 +1054,18 @@ export class Game {
   // ── frame driver ──────────────────────────────────────────────────────────
   frame(rawDt) {
     this.t += rawDt;
+    if (this.net) this.net.update(); // pings + stale pruning even in menu/lobby
     if (this.freeze > 0) { this.freeze -= rawDt; this.render(); return; }
     let dt = rawDt * this.timeScale;
     if (this.state === 'dying') {
       this.dyingT -= rawDt;
       this.timeScale = lerp(this.timeScale, 0.22, 0.12);
-      if (this.dyingT <= 0) { this.timeScale = 1; this.finishRun(); dt = 0; }
+      if (this.dyingT <= 0) {
+        this.timeScale = 1;
+        // co-op: the pack fights on — respawn instead of game over
+        if (this.isOnline()) { this.respawnLocal(); dt = 0; }
+        else { this.finishRun(); dt = 0; }
+      }
     } else if (this.state === 'playing') {
       this.timeScale = lerp(this.timeScale, 1, 0.25);
     }
@@ -982,6 +1396,14 @@ export class Game {
       renderables.push({ type: 'player', depth: this.player.x + this.player.y, obj: this.player });
     }
 
+    // Other Hunters (multiplayer, interpolated at render rate)
+    if (this.remotePlayers && this.remotePlayers.size && this.state !== 'menu') {
+      for (const [id, rp] of this.remotePlayers) {
+        if (rp == null || rp.x === undefined) continue;
+        renderables.push({ type: 'remote', depth: rp.x + rp.y, obj: rp, rid: id });
+      }
+    }
+
     // Sort ascending by depth (depth = x + y in 2:1 isometric projection)
     renderables.sort((a, b) => a.depth - b.depth);
 
@@ -1006,6 +1428,10 @@ export class Game {
 
         case 'player':
           this.renderPlayer(ctx, r.obj);
+          break;
+
+        case 'remote':
+          this.renderRemotePlayer(ctx, r.obj, r.rid);
           break;
       }
     }
@@ -1139,6 +1565,60 @@ export class Game {
 
     drawHunterHuman(ctx, p, this, this.t);
 
+    ctx.restore();
+  }
+
+  renderRemotePlayer(ctx, rp, rid) {
+    const sc = this.worldToScreen(rp.x, rp.y, 0);
+    if (sc.x < -90 || sc.x > this.w + 90 || sc.y < -110 || sc.y > this.h + 90) return;
+    const accent = accentForHunter(rid || rp.name);
+    const down = rp.alive === false || (rp.hp || 0) <= 0;
+    // rehydrate a hunter pose from the interpolated network state
+    const fake = {
+      x: rp.x, y: rp.y,
+      vx: rp.vx || 0, vy: rp.vy || 0,
+      ang: rp.ang || 0,
+      hp: rp.hp, maxHp: rp.maxHp || 100,
+      iframes: rp.iframes || 0,
+      dashT: rp.dashT || 0, dashCd: 0,
+      flashT: rp.firing ? (((this.t * 24) | 0) % 2 === 0 ? 0.05 : 0) : 0,
+      recoil: rp.firing ? 3.2 : 0,
+      walkPhase: rp.walkPhase || 0,
+      flinch: 0,
+      isMoving: !!rp.isMoving,
+      moveAng: rp.moveAng || 0,
+      buffs: {
+        rapid: 0, spread: 0, pierce: 0,
+        shield: (rp.buffs && rp.buffs.shield) || 0,
+      },
+    };
+    ctx.save();
+    ctx.translate(sc.x, sc.y);
+    if (down) ctx.globalAlpha = 0.45;
+    else if (rp.stale) ctx.globalAlpha = 0.7;
+    drawHunterHuman(ctx, fake, this, this.t, {
+      accent,
+      name: down ? `${rp.name || 'HUNTER'} · DOWN` : (rp.name || 'HUNTER'),
+      hpFrac: clamp((rp.hp || 0) / (rp.maxHp || 100), 0, 1),
+      isHost: !!rp.isHost,
+    });
+    // ally tracer: a short energy streak while the hunter is firing
+    if (rp.firing && !down) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.55;
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      const gx = Math.cos(rp.ang || 0), gy = Math.sin(rp.ang || 0);
+      const tip = this.worldToScreen(rp.x + gx * 22, rp.y + gy * 22, 22);
+      const end = this.worldToScreen(rp.x + gx * 150, rp.y + gy * 150, 22);
+      ctx.beginPath();
+      ctx.moveTo(tip.x - sc.x, tip.y - sc.y);
+      ctx.lineTo(end.x - sc.x, end.y - sc.y);
+      ctx.stroke();
+      ctx.restore();
+    }
     ctx.restore();
   }
 

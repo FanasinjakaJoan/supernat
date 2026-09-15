@@ -4,6 +4,62 @@ import { TAU, clamp, lerp, rand } from './utils.js';
 import { getGlow } from './particles.js';
 import { worldAngleToScreen } from './iso.js';
 
+// ─── Multiplayer Hunter Identity ────────────────────────────────────────────
+// Distinct accent colors + overhead name tags for "Other Hunters" in co-op.
+export const HUNTER_ACCENTS = ['#7be9ff', '#ff9d3d', '#ff5d76', '#b06cff', '#ffd23d', '#54d44a'];
+
+/** Deterministic accent color for a remote hunter id (stable across frames). */
+export function accentForHunter(id) {
+  const s = String(id || '?');
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return HUNTER_ACCENTS[h % HUNTER_ACCENTS.length];
+}
+
+function hexA(hex, a) {
+  const h = String(hex || '#9dff20').replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16) || 157;
+  const g = parseInt(h.slice(2, 4), 16) || 255;
+  const b = parseInt(h.slice(4, 6), 16) || 32;
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
+
+/** Overhead name tag + mini vitality bar for remote hunters. Drawn in actor space. */
+export function drawHunterTag(ctx, name, accent, hpFrac) {
+  const label = String(name || 'HUNTER').slice(0, 12);
+  ctx.save();
+  ctx.font = '700 10px Rajdhani, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  const w = ctx.measureText ? ctx.measureText(label).width : label.length * 7;
+  const y = -72;
+  // pill backdrop
+  ctx.fillStyle = 'rgba(8, 5, 14, 0.72)';
+  ctx.strokeStyle = hexA(accent, 0.55);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  const pw = Math.max(44, w + 14);
+  if (ctx.roundRect) {
+    ctx.beginPath();
+    ctx.roundRect(-pw / 2, y - 15, pw, 15, 3);
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    ctx.fillRect(-pw / 2, y - 15, pw, 15);
+  }
+  ctx.fillStyle = accent || '#9dff20';
+  ctx.fillText(label, 0, y - 3.5);
+  // mini HP bar under the name
+  if (typeof hpFrac === 'number') {
+    const bw = Math.max(40, w + 10);
+    ctx.fillStyle = 'rgba(8,4,14,0.8)';
+    ctx.fillRect(-bw / 2, y + 1.5, bw, 3);
+    ctx.fillStyle = hpFrac < 0.3 ? '#ff2e4d' : accent;
+    ctx.fillRect(-bw / 2, y + 1.5, bw * clamp(hpFrac, 0, 1), 3);
+  }
+  ctx.restore();
+}
+
 /** Updates human locomotion state (stride cycle, foot planting, spine twist, flinch). */
 export function updateHumanoidLocomotion(actor, dt, isPlayer = false) {
   const vx = actor.vx || 0;
@@ -38,7 +94,9 @@ function drawHumanShadow(ctx, rx, ry, alpha = 0.42) {
 
 // ─── THE HUNTER (Player) ───────────────────────────────────────────────────
 // Fully articulated human operative in tactical survival rig, wielding carbine.
-export function drawHunterHuman(ctx, p, g, t) {
+// opts: { accent, name, hpFrac, isHost } — used for remote hunters in multiplayer.
+export function drawHunterHuman(ctx, p, g, t, opts = null) {
+  const accent = (opts && opts.accent) || '#9dff20';
   const speed = Math.hypot(p.vx || 0, p.vy || 0);
   const isMoving = speed > 10;
   const walkPhase = p.walkPhase || 0;
@@ -65,7 +123,7 @@ export function drawHunterHuman(ctx, p, g, t) {
   if (p.dashT > 0) {
     ctx.save();
     ctx.globalAlpha = 0.35;
-    ctx.fillStyle = '#9dff20';
+    ctx.fillStyle = accent;
     ctx.beginPath();
     ctx.ellipse(0, -22, 14, 24, 0, 0, TAU);
     ctx.fill();
@@ -189,7 +247,7 @@ export function drawHunterHuman(ctx, p, g, t) {
   ctx.fillRect(-6, -torsoHeight + 8, 12, 2.5);
 
   // Veil Order Insignia on Chest
-  ctx.fillStyle = '#9dff20';
+  ctx.fillStyle = accent;
   ctx.beginPath();
   ctx.arc(0, -torsoHeight + 6, 1.8, 0, TAU);
   ctx.fill();
@@ -217,11 +275,11 @@ export function drawHunterHuman(ctx, p, g, t) {
   // Curved Magazine
   ctx.fillStyle = '#1a1824';
   ctx.fillRect(0, 1.8, 4.5, 7.5);
-  // Reflex Sight (glowing green reticle)
-  ctx.fillStyle = '#9dff20';
+  // Reflex Sight (glowing reticle in hunter accent)
+  ctx.fillStyle = accent;
   ctx.fillRect(6, -4.5, 3.5, 2.2);
   // Laser Pointer Beam
-  ctx.strokeStyle = 'rgba(157, 255, 32, 0.45)';
+  ctx.strokeStyle = hexA(accent, 0.45);
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(gunLength, 0);
@@ -275,14 +333,14 @@ export function drawHunterHuman(ctx, p, g, t) {
   const lookY = Math.sin(aimScrAng) * 2;
 
   if (facingCam) {
-    // Twin Glowing Green Goggle Lenses
-    ctx.fillStyle = '#9dff20';
+    // Twin Glowing Goggle Lenses (hunter accent color)
+    ctx.fillStyle = accent;
     ctx.beginPath();
     ctx.arc(lookX - 2.5, headY + lookY, 1.8, 0, TAU);
     ctx.arc(lookX + 2.5, headY + lookY, 1.8, 0, TAU);
     ctx.fill();
     // Subtle visor flare
-    const s = getGlow('#9dff20');
+    const s = getGlow(accent);
     ctx.save();
     ctx.globalAlpha = 0.65;
     ctx.globalCompositeOperation = 'lighter';
@@ -301,7 +359,7 @@ export function drawHunterHuman(ctx, p, g, t) {
   // Dash Cooldown Arc
   if (p.dashCd > 0) {
     const frac = 1 - p.dashCd / 1.15;
-    ctx.strokeStyle = 'rgba(157, 255, 32, 0.6)';
+    ctx.strokeStyle = hexA(accent, 0.6);
     ctx.lineWidth = 2.2;
     ctx.beginPath();
     ctx.arc(0, -pelvisHeight * 0.5, 20, -Math.PI / 2, -Math.PI / 2 + frac * TAU);
@@ -317,6 +375,22 @@ export function drawHunterHuman(ctx, p, g, t) {
     ctx.setLineDash([12, 8]);
     ctx.beginPath();
     ctx.ellipse(0, -pelvisHeight * 0.6, 24, 26, 0, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 9. Multiplayer overhead name tag + vitality bar for Other Hunters
+  if (opts && opts.name) {
+    const hpFrac = typeof opts.hpFrac === 'number' ? opts.hpFrac : (p.hp / (p.maxHp || 100));
+    drawHunterTag(ctx, (opts.isHost ? '♛ ' : '') + opts.name, accent, hpFrac);
+    // ground ring in accent color so allies read at a glance
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = hexA(accent, 0.8);
+    ctx.lineWidth = 2;
+    ctx.setLineDash([7, 6]);
+    ctx.beginPath();
+    ctx.ellipse(0, 1, 17, 8.5, 0, 0, TAU);
     ctx.stroke();
     ctx.restore();
   }

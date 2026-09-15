@@ -494,3 +494,117 @@ body.touch .desktop-hint { display: none; }
   .lore { display: none; }
   .hints { margin-top: 10px; }
 }
+
+/* ═══ multiplayer co-op ═══ */
+.mp-panel {
+  margin-top: 18px;
+  padding: 14px 16px 12px;
+  background: rgba(10, 6, 17, 0.62);
+  border: 1px solid rgba(123, 233, 255, 0.22);
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+}
+.mp-title {
+  font-family: var(--font-display);
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.3em;
+  color: var(--ghost);
+  text-align: center;
+  margin-bottom: 10px;
+  text-shadow: 0 0 10px rgba(123, 233, 255, 0.4);
+}
+.mp-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-left: 6px; vertical-align: 1px;
+}
+.mp-dot.off { background: #554e5e; box-shadow: none; }
+.mp-dot.on { background: var(--acid); box-shadow: 0 0 8px var(--acid); animation: hpPulse 1.6s infinite; }
+.mp-dot.busy { background: var(--ember); box-shadow: 0 0 8px var(--ember); animation: hpPulse 0.7s infinite; }
+.mp-row {
+  display: flex; gap: 8px; justify-content: center; align-items: center;
+  margin-bottom: 8px; flex-wrap: wrap;
+}
+.mp-row input {
+  font-family: var(--font-display); font-size: 13px; letter-spacing: 0.18em;
+  text-transform: uppercase; text-align: center;
+  color: var(--ghost); background: rgba(8, 5, 14, 0.9);
+  border: 1px solid rgba(123, 233, 255, 0.3);
+  padding: 0.55em 0.8em; outline: none; min-width: 0;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+#mp-name { width: 190px; }
+#mp-code { width: 110px; }
+.mp-row input:focus { border-color: var(--ghost); box-shadow: 0 0 14px rgba(123, 233, 255, 0.25); }
+.mp-row .btn { font-size: 11px; padding: 0.7em 1.1em; }
+.btn.tiny { font-size: 10px; padding: 0.5em 0.9em; }
+.mp-status {
+  text-align: center; font-size: 12px; letter-spacing: 0.12em;
+  color: var(--dim); margin-top: 4px;
+}
+.mp-status.ok { color: var(--acid); }
+.mp-status.err { color: var(--blood); }
+.mp-room {
+  display: flex; gap: 10px; align-items: center; justify-content: center;
+  margin-top: 8px; font-family: var(--font-display); font-size: 12px;
+  letter-spacing: 0.14em; color: var(--bone); flex-wrap: wrap;
+}
+.mp-room b {
+  color: var(--ghost); font-size: 16px; letter-spacing: 0.3em;
+  text-shadow: 0 0 12px rgba(123, 233, 255, 0.5);
+}
+.mp-role { color: #ffd23d; font-size: 11px; }
+.mp-players {
+  display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;
+  margin-top: 8px;
+}
+.mp-tag {
+  font-family: var(--font-display); font-size: 10px; letter-spacing: 0.1em;
+  padding: 3px 9px; color: var(--bone);
+  background: rgba(12, 9, 19, 0.8);
+  border: 1px solid rgba(232, 224, 207, 0.25);
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px);
+}
+.mp-tag.self { border-color: var(--acid); color: var(--acid); }
+.mp-tag.host { border-color: #ffd23d; }
+.mp-tag.stale { opacity: 0.45; }
+
+/* HUD multiplayer badges + roster */
+.hud-mp {
+  display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;
+  margin-top: 4px;
+}
+.mp-badge {
+  font-family: var(--font-display); font-weight: 700;
+  font-size: clamp(8px, 1.7vw, 10.5px); letter-spacing: 0.14em;
+  color: var(--ghost);
+  padding: 3px 10px;
+  border: 1px solid rgba(123, 233, 255, 0.35);
+  background: rgba(10, 14, 22, 0.78);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  white-space: nowrap;
+}
+.mp-badge.team { color: var(--acid); border-color: var(--acid-dim); }
+.mp-badge.ping-bad { color: var(--blood); border-color: rgba(255, 46, 77, 0.5); }
+.mp-badge.ping-warn { color: var(--ember); border-color: rgba(255, 157, 61, 0.5); }
+.mp-roster {
+  display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;
+  margin-top: 4px; max-width: 46vw;
+}
+.mp-hp {
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--font-display); font-size: 9px; letter-spacing: 0.08em;
+  color: var(--bone); padding: 2px 8px;
+  background: rgba(10, 6, 17, 0.7);
+  border: 1px solid rgba(232, 224, 207, 0.16);
+}
+.mp-hp i {
+  display: block; width: 44px; height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.mp-hp i b { display: block; height: 100%; background: var(--acid); }
+.mp-hp.down { opacity: 0.6; border-color: rgba(255, 46, 77, 0.5); }
+.mp-hp.down i b { background: var(--blood); }
+@media (max-width: 640px) {
+  .mp-roster { max-width: 92vw; }
+  #mp-name { width: 150px; }
+  #mp-code { width: 90px; }
+}

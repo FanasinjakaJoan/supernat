@@ -25,12 +25,64 @@ OpenStreetMap and historical archives of Antananarivo Renivohitra:
 ## Play
 
 ```bash
-node server.js          # → http://localhost:8080
+node server.js          # → http://localhost:8080  (solo, zero dependencies)
 # or any static server:  python3 -m http.server 8080
 ```
 
 Open the printed URL. Works with keyboard + mouse on desktop and twin-stick
 touch controls on mobile.
+
+## Multiplayer Co-op (2–4 hunters, real-time)
+
+Hunt the necropolis as a pack. The Python server hosts the game **and** the
+WebSocket backend — same URL, no build step, solo play untouched when offline.
+
+```bash
+pip install -r requirements.txt
+python server.py        # → http://localhost:8080  (game + WS at /ws)
+# or:  uvicorn server:app --host 0.0.0.0 --port 8080
+```
+
+1. One hunter clicks **＋ CREATE**, shares the 4-letter room code (or COPY LINK).
+2. The pack enters the code and clicks **➤ JOIN**, then everyone presses
+   **BEGIN THE HUNT** to deploy into the same Anjanahary instance.
+3. Downed hunters respawn — the pack survives as long as one hunter stands.
+
+HUD extras while packed: room code, hunter count, ping latency, team score,
+and ally vitality chips. Other Hunters render with accent colors, name tags,
+and firing tracers.
+
+**Netcode:** 30 Hz server tick relaying player state (pos, aim, dash/i-frames,
+HP, combo/score); host-authoritative waves/enemies/pickups (~15 Hz world
+snapshots); guest hit-claims with host-confirmed kill credit; 100 ms
+interpolation + dead-reckoning for 60 FPS-smooth remotes; ping/pong
+heartbeats, host migration, and empty-room cleanup. See `server.py` for the
+JSON protocol and `tools/mp_*` for the automated multiplayer test suites.
+
+## Deploy (public link for other PCs)
+
+> ⚠️ **Not PythonAnywhere**: it officially supports WSGI apps only — FastAPI
+> and WebSockets are still experimental/beta there with no web UI, so the
+> real-time hunt can't reliably run on it. Use a host with first-class
+> WebSocket support instead (both free, no credit card):
+
+**Render.com — easiest (free tier, `render.yaml` included)**
+1. Push this branch to GitHub (already on `arena/01a0a592-supernat`).
+2. Go to **dashboard.render.com → New → Web Service**, connect the repo,
+   pick the branch.
+3. Build command: `pip install -r requirements.txt`
+4. Start command: `uvicorn server:app --host 0.0.0.0 --port $PORT` (single
+   worker — rooms live in process memory, never add `--workers N`)
+5. Plan **Free** → Deploy. You get `https://supernat.onrender.com`.
+6. Share that URL: the game auto-connects its WebSocket (`wss://…/ws`) —
+   other PCs just open it, enter your room code, and hunt.
+7. Note: free tier sleeps after 15 min idle; first visit wakes it in ~30–60 s.
+
+**Hugging Face Spaces — Docker alternative (free, stays warm longer)**
+1. Create a Space → SDK **Docker** → blank template.
+2. Push this repo to the Space (it already has a `Dockerfile`; HF injects
+   `$PORT=7860`, WebSockets supported).
+3. Open `https://<you>-supernat.hf.space` and share it.
 
 ## Controls
 
@@ -72,7 +124,10 @@ The in-game bestiary documents each form of supernatural life rising in the ceme
 data/ampasapito_anjanahary_data.json   scraped OSM vector boundary, nodes, thoroughfares, & sectors
 tools/scrape_anjanahary.mjs            data processor / scraper generator
 tools/test_anjanahary_map.mjs          automated test suite for map geometry, sectors, and 2.5D rendering
-tools/smoke.mjs                        headless engine and simulation tests
+tools/smoke.mjs                        headless engine and simulation tests (solo)
+tools/mp_protocol_test.py              WS protocol tests: rooms, 30 Hz tick, relay, migration
+tools/mp_netclient_test.mjs            js/net.js end-to-end test against the live server
+tools/mp_gameplay_test.mjs             two-game co-op integration test (host + guest)
 ```
 
 ## Tech
@@ -82,8 +137,11 @@ bidirectional screen-to-world mapping, depth-sorted 2.5D necropolis geometry, ar
 pre-rendered Madagascar ground plane, capped particle counts and a DPR cap keep it at 60 fps on mobile.
 
 ```
+server.py                   FastAPI + WebSocket backend: rooms, 30 Hz tick, host relay (serves game too)
+requirements.txt            fastapi, uvicorn, websockets
 js/main.js                  boot + fixed loop
-js/game.js                  2.5D state machine, Anjanahary ground renderer, combat, waves
+js/game.js                  2.5D state machine, Anjanahary ground renderer, combat, waves, co-op sync
+js/net.js                   WebSocket client: interpolation, dead reckoning, ping, host snapshots
 js/iso.js                   isometric projection math, camera, 2.5D Malagasy props (fasana, monument, etc.)
 js/data/anjanaharyMapData.js real OSM coordinates, thoroughfares, sector classifier, Malagasy lore
 js/humanoid.js              realistic human actors & locomotion kinematics (City Z style)
