@@ -1,8 +1,8 @@
 /* ═══ SUPERNAT · City of the Fallen — apocalyptic UI theme ═══════════════ */
 :root {
-  --bg: #0c0913;
-  --panel: #140e1e;
-  --panel-2: #0e0917;
+  --bg: #120a08;
+  --panel: #180f14;
+  --panel-2: #10080a;
   --acid: #9dff20;
   --acid-dim: rgba(157, 255, 32, 0.35);
   --blood: #ff2e4d;
@@ -10,7 +10,9 @@
   --ghost: #7be9ff;
   --violet: #b06cff;
   --bone: #e8e0cf;
-  --dim: #8d84a3;
+  --laterite: #c44e36;
+  --jacaranda: #a068db;
+  --dim: #9c8e98;
   --font-display: 'Orbitron', 'Segoe UI', sans-serif;
   --font-body: 'Rajdhani', 'Segoe UI', sans-serif;
 }
@@ -97,15 +99,34 @@ body.in-run #game { cursor: crosshair; }
 #combo-fill { display: block; height: 100%; width: 0; background: var(--acid);
   box-shadow: 0 0 8px rgba(157, 255, 32, 0.8); }
 
+.hud-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
 .wave-tag {
   font-family: var(--font-display); font-weight: 700;
   letter-spacing: 0.3em; font-size: clamp(11px, 2.4vw, 15px);
   color: var(--bone);
   padding: 6px 16px;
   border: 1px solid rgba(232, 224, 207, 0.22);
-  background: rgba(12, 9, 19, 0.55);
+  background: rgba(18, 10, 14, 0.65);
   clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
   text-shadow: 0 0 12px rgba(176, 108, 255, 0.5);
+}
+
+.sector-tag {
+  font-family: var(--font-display); font-weight: 600;
+  letter-spacing: 0.16em; font-size: clamp(8px, 1.8vw, 11px);
+  color: #e0aa54;
+  padding: 3px 12px;
+  border: 1px solid rgba(224, 170, 84, 0.35);
+  background: rgba(26, 12, 10, 0.8);
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  text-shadow: 0 0 8px rgba(224, 170, 84, 0.6);
+  white-space: nowrap;
 }
 .hud-right { display: flex; gap: 8px; pointer-events: auto; }
 .icon-btn {

@@ -19,6 +19,7 @@ import {
   drawHunterHuman,
   drawTacticalReticle,
 } from './humanoid.js';
+import { ANJANAHARY_GEO, getAnjanaharySector } from './data/anjanaharyMapData.js';
 
 const PORTAL_TIME = 0.55;
 
@@ -50,19 +51,21 @@ export class Game {
     this.kills = 0;
     this.runT = 0;
     this.isoScale = ISO_SCALE;
-    this.camX = 800;
-    this.camY = 800;
+    this.camX = 1140;
+    this.camY = 920;
 
-    // Atmospheric embers & drifting fog
+    // Atmospheric embers, jacaranda petals & drifting fog in Antananarivo night
     this.embers = [];
     this.fog = [];
-    for (let i = 0; i < 28; i++) {
+    const emberColors = ['#ff9d3d', '#d45236', '#b074eb', '#c98aff', '#e8be5c'];
+    for (let i = 0; i < 36; i++) {
       this.embers.push({
-        x: Math.random(), y: Math.random(), s: rand(0.8, 2.4),
-        v: rand(10, 32), drift: rand(TAU), a: rand(0.2, 0.6),
+        x: Math.random(), y: Math.random(), s: rand(1.0, 2.6),
+        v: rand(10, 32), drift: rand(TAU), a: rand(0.25, 0.65),
+        col: pick(emberColors),
       });
     }
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 6; i++) {
       this.fog.push({
         x: Math.random(), y: Math.random(), vx: rand(-8, 8), vy: rand(-4, 4), r: rand(240, 440),
       });
@@ -90,9 +93,9 @@ export class Game {
     this.canvas.style.width = this.w + 'px';
     this.canvas.style.height = this.h + 'px';
 
-    // Apocalyptic combat sector in Meridian City
-    this.arenaW = Math.max(1600, this.w * 1.4);
-    this.arenaH = Math.max(1600, this.h * 1.4);
+    // Semi-realistic Anjanahary & Ampasapito necropolis sector (12 hectares)
+    this.arenaW = Math.max(2400, Math.round(this.w * 1.8));
+    this.arenaH = Math.max(2200, Math.round(this.h * 1.8));
     this.props = createCityProps(this.arenaW, this.arenaH);
 
     this.buildBackground();
@@ -106,12 +109,12 @@ export class Game {
   buildBackground() {
     const w = this.w, h = this.h, d = this.dpr;
 
-    // Supernatural Rifts seeping energy through the street
+    // Supernatural Rifts seeping energy through the historical cemetery
     this.rifts = [];
-    const cx = this.arenaW * 0.5, cy = this.arenaH * 0.5;
-    this.rifts.push({ x: cx - 220, y: cy - 160, r: 36, ph: 0 });
-    this.rifts.push({ x: cx + 240, y: cy + 180, r: 40, ph: 1.8 });
-    this.rifts.push({ x: cx - 180, y: cy + 240, r: 34, ph: 3.4 });
+    this.rifts.push({ x: 1680, y: 880, r: 38, ph: 0 });    // Carré Militaire (Lots 38-39)
+    this.rifts.push({ x: 440, y: 1340, r: 36, ph: 1.8 });  // Fasam-bahiny 1880 (Historic Colonial Crypts)
+    this.rifts.push({ x: 620, y: 720, r: 34, ph: 3.4 });   // Faritra Fasana (West Family Vaults)
+    this.rifts.push({ x: 2160, y: 440, r: 36, ph: 4.8 });  // Terminus Ampasapito (East Border)
 
     // Vignette
     const vg = document.createElement('canvas');
@@ -120,7 +123,7 @@ export class Game {
     v.scale(d, d);
     const grad = v.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.76);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(3,1,8,0.72)');
+    grad.addColorStop(1, 'rgba(16,4,6,0.74)');
     v.fillStyle = grad; v.fillRect(0, 0, w, h);
     this.vignette = vg;
   }
@@ -131,7 +134,7 @@ export class Game {
       x, y,
       r: (big ? 26 : 14) * rand(0.85, 1.3),
       rot: rand(TAU),
-      color: big ? 'rgba(78, 10, 20, 0.65)' : 'rgba(92, 12, 24, 0.55)',
+      color: big ? 'rgba(82, 10, 18, 0.7)' : 'rgba(96, 12, 22, 0.6)',
     });
   }
 
@@ -149,17 +152,19 @@ export class Game {
     this.timeScale = 1; this.freeze = 0; this.shakeT = 0;
     const P = CFG.player;
 
-    // Real human hunter positioned at the center of Meridian
+    // Real human hunter positioned at Carrefour Central of Cimetière d'Anjanahary
+    const startX = 1140;
+    const startY = 920;
     this.player = {
-      x: this.arenaW * 0.5, y: this.arenaH * 0.5,
+      x: startX, y: startY,
       vx: 0, vy: 0, r: P.radius,
       hp: P.hp, maxHp: P.hp, ang: 0, iframes: 0,
       dashT: 0, dashCd: 0, dashAng: 0, fireCd: 0, flashT: 0, recoil: 0,
       walkPhase: 0, flinch: 0, isMoving: false, moveAng: 0,
       buffs: { rapid: 0, spread: 0, pierce: 0, shield: 0 },
     };
-    this.camX = this.player.x;
-    this.camY = this.player.y;
+    this.camX = startX;
+    this.camY = startY;
     this.intermission = 0;
     this.nextWave();
     SFX.unlock();
@@ -724,119 +729,198 @@ export class Game {
     }
   }
 
-  // ── Isometric City Ground Plane ───────────────────────────────────────────
+  // ── Isometric Madagascar Anjanahary Ground Plane ──────────────────────────
   drawCityGround(ctx) {
     const { w, h, arenaW, arenaH } = this;
-    const cx = arenaW * 0.5, cy = arenaH * 0.5;
 
-    // Base dark apocalyptic asphalt
-    ctx.fillStyle = '#0a0812';
+    // 1) Base dark Malagasy laterite red clay ("tany mena")
+    ctx.fillStyle = '#180c09';
     ctx.fillRect(0, 0, w, h);
 
-    // Project four corners of the arena to determine bounds
-    const roadHalf = 110;
+    // Subtle isometric diamond ground grid / laterite soil texture
+    ctx.strokeStyle = 'rgba(74, 28, 20, 0.22)';
+    ctx.lineWidth = 1;
+    const step = 80;
+    for (let x = 0; x <= arenaW; x += step) {
+      const p1 = this.worldToScreen(x, 0, 0);
+      const p2 = this.worldToScreen(x, arenaH, 0);
+      ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+    }
+    for (let y = 0; y <= arenaH; y += step) {
+      const p1 = this.worldToScreen(0, y, 0);
+      const p2 = this.worldToScreen(arenaW, y, 0);
+      ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+    }
 
-    // Road 1 (running along world X-axis)
-    const r1p1 = this.worldToScreen(0, cy - roadHalf, 0);
-    const r1p2 = this.worldToScreen(arenaW, cy - roadHalf, 0);
-    const r1p3 = this.worldToScreen(arenaW, cy + roadHalf, 0);
-    const r1p4 = this.worldToScreen(0, cy + roadHalf, 0);
+    // 2) Làlana Rasoamiaramanana (OSM way 76181286) across the north
+    // Connecting Anjanahary west to Ampasapito east
+    const roadY1 = 140, roadY2 = 270;
+    const r1 = this.worldToScreen(0, roadY1, 0);
+    const r2 = this.worldToScreen(arenaW, roadY1, 0);
+    const r3 = this.worldToScreen(arenaW, roadY2, 0);
+    const r4 = this.worldToScreen(0, roadY2, 0);
 
-    ctx.fillStyle = '#120e1d';
+    // Dusty red clay road shoulders
+    ctx.fillStyle = '#26100a';
     ctx.beginPath();
-    ctx.moveTo(r1p1.x, r1p1.y);
-    ctx.lineTo(r1p2.x, r1p2.y);
-    ctx.lineTo(r1p3.x, r1p3.y);
-    ctx.lineTo(r1p4.x, r1p4.y);
-    ctx.closePath();
-    ctx.fill();
+    ctx.moveTo(r1.x, r1.y); ctx.lineTo(r2.x, r2.y); ctx.lineTo(r3.x, r3.y); ctx.lineTo(r4.x, r4.y);
+    ctx.closePath(); ctx.fill();
 
-    // Road 2 (running along world Y-axis)
-    const r2p1 = this.worldToScreen(cx - roadHalf, 0, 0);
-    const r2p2 = this.worldToScreen(cx + roadHalf, 0, 0);
-    const r2p3 = this.worldToScreen(cx + roadHalf, arenaH, 0);
-    const r2p4 = this.worldToScreen(cx - roadHalf, arenaH, 0);
+    // Weathered Asphalt carriageway
+    const asph1 = this.worldToScreen(0, roadY1 + 18, 0);
+    const asph2 = this.worldToScreen(arenaW, roadY1 + 18, 0);
+    const asph3 = this.worldToScreen(arenaW, roadY2 - 18, 0);
+    const asph4 = this.worldToScreen(0, roadY2 - 18, 0);
 
+    ctx.fillStyle = '#14101a';
     ctx.beginPath();
-    ctx.moveTo(r2p1.x, r2p1.y);
-    ctx.lineTo(r2p2.x, r2p2.y);
-    ctx.lineTo(r2p3.x, r2p3.y);
-    ctx.lineTo(r2p4.x, r2p4.y);
-    ctx.closePath();
-    ctx.fill();
+    ctx.moveTo(asph1.x, asph1.y); ctx.lineTo(asph2.x, asph2.y); ctx.lineTo(asph3.x, asph3.y); ctx.lineTo(asph4.x, asph4.y);
+    ctx.closePath(); ctx.fill();
 
-    // Raised Concrete Sidewalks & Curbs in 4 Quadrants
-    const drawQuadrant = (x1, y1, x2, y2) => {
-      const p1 = this.worldToScreen(x1, y1, 0);
-      const p2 = this.worldToScreen(x2, y1, 0);
-      const p3 = this.worldToScreen(x2, y2, 0);
-      const p4 = this.worldToScreen(x1, y2, 0);
+    // Road shoulder edge borders
+    ctx.strokeStyle = '#321c16';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(asph1.x, asph1.y); ctx.lineTo(asph2.x, asph2.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(asph4.x, asph4.y); ctx.lineTo(asph3.x, asph3.y); ctx.stroke();
 
-      ctx.fillStyle = '#171224';
-      ctx.beginPath();
-      ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y);
-      ctx.closePath(); ctx.fill();
-
-      // Curb highlight
-      ctx.strokeStyle = '#282038';
-      ctx.lineWidth = 1.8;
-      ctx.stroke();
-    };
-
-    drawQuadrant(0, 0, cx - roadHalf, cy - roadHalf);
-    drawQuadrant(cx + roadHalf, 0, arenaW, cy - roadHalf);
-    drawQuadrant(0, cy + roadHalf, cx - roadHalf, arenaH);
-    drawQuadrant(cx + roadHalf, cy + roadHalf, arenaW, arenaH);
-
-    // Weathered Yellow Centerlines
-    ctx.strokeStyle = 'rgba(214, 180, 80, 0.45)';
-    ctx.lineWidth = 2.4;
-    ctx.setLineDash([26, 20]);
-
-    // X-road center
-    const cx1 = this.worldToScreen(0, cy, 0);
-    const cx2 = this.worldToScreen(arenaW, cy, 0);
-    ctx.beginPath(); ctx.moveTo(cx1.x, cx1.y); ctx.lineTo(cx2.x, cx2.y); ctx.stroke();
-
-    // Y-road center
-    const cy1 = this.worldToScreen(cx, 0, 0);
-    const cy2 = this.worldToScreen(cx, arenaH, 0);
-    ctx.beginPath(); ctx.moveTo(cy1.x, cy1.y); ctx.lineTo(cy2.x, cy2.y); ctx.stroke();
+    // Broken center white dashed lines along Rue Rasoamiaramanana
+    ctx.strokeStyle = 'rgba(210, 205, 200, 0.35)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([24, 18]);
+    const rMid1 = this.worldToScreen(0, (roadY1 + roadY2) * 0.5, 0);
+    const rMid2 = this.worldToScreen(arenaW, (roadY1 + roadY2) * 0.5, 0);
+    ctx.beginPath(); ctx.moveTo(rMid1.x, rMid1.y); ctx.lineTo(rMid2.x, rMid2.y); ctx.stroke();
     ctx.setLineDash([]);
 
-    // Pedestrian Zebra Crosswalks at Intersection
-    ctx.fillStyle = 'rgba(220, 220, 240, 0.28)';
-    const cwStep = 18;
-    for (let off = -roadHalf + 10; off < roadHalf - 10; off += cwStep) {
-      // West crosswalk
-      const pW = this.worldToScreen(cx - roadHalf - 14, cy + off, 0);
-      ctx.beginPath(); ctx.ellipse(pW.x, pW.y, 8, 4, 0, 0, TAU); ctx.fill();
-      // East crosswalk
-      const pE = this.worldToScreen(cx + roadHalf + 14, cy + off, 0);
-      ctx.beginPath(); ctx.ellipse(pE.x, pE.y, 8, 4, 0, 0, TAU); ctx.fill();
-      // North crosswalk
-      const pN = this.worldToScreen(cx + off, cy - roadHalf - 14, 0);
-      ctx.beginPath(); ctx.ellipse(pN.x, pN.y, 8, 4, 0, 0, TAU); ctx.fill();
-      // South crosswalk
-      const pS = this.worldToScreen(cx + off, cy + roadHalf + 14, 0);
-      ctx.beginPath(); ctx.ellipse(pS.x, pS.y, 8, 4, 0, 0, TAU); ctx.fill();
+    // 3) Allée Centrale Pavée d'Anjanahary (OSM Way 45980202)
+    // Slices from North Gate at y=270 down south to y=2080
+    const acX1 = 1040, acX2 = 1170;
+    const ac1 = this.worldToScreen(acX1, 270, 0);
+    const ac2 = this.worldToScreen(acX2, 270, 0);
+    const ac3 = this.worldToScreen(acX2 + 80, 2080, 0);
+    const ac4 = this.worldToScreen(acX1 + 80, 2080, 0);
+
+    // Weathered Granite Cobblestone surface
+    ctx.fillStyle = '#26202c';
+    ctx.beginPath();
+    ctx.moveTo(ac1.x, ac1.y); ctx.lineTo(ac2.x, ac2.y); ctx.lineTo(ac3.x, ac3.y); ctx.lineTo(ac4.x, ac4.y);
+    ctx.closePath(); ctx.fill();
+
+    // Cobblestone curbstones / lateral stone curbs
+    ctx.strokeStyle = '#3e3448';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(ac1.x, ac1.y); ctx.lineTo(ac4.x, ac4.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(ac2.x, ac2.y); ctx.lineTo(ac3.x, ac3.y); ctx.stroke();
+
+    // Transverse cobblestone joint courses along the avenue
+    ctx.strokeStyle = 'rgba(32, 24, 38, 0.45)';
+    ctx.lineWidth = 1.2;
+    for (let cy = 300; cy < 2060; cy += 32) {
+      const frac = (cy - 270) / (2080 - 270);
+      const curX1 = acX1 + 80 * frac;
+      const curX2 = acX2 + 80 * frac;
+      const cp1 = this.worldToScreen(curX1, cy, 0);
+      const cp2 = this.worldToScreen(curX2, cy, 0);
+      ctx.beginPath(); ctx.moveTo(cp1.x, cp1.y); ctx.lineTo(cp2.x, cp2.y); ctx.stroke();
     }
 
-    // Cast iron manhole covers
-    const manholes = [
-      { x: cx - 120, y: cy - 70 },
-      { x: cx + 130, y: cy + 70 },
-      { x: cx - 60, y: cy + 130 },
-      { x: cx + 70, y: cy - 130 },
+    // 4) Allée du Carré Militaire (Cross Avenue linking Allée Centrale to Carré Militaire)
+    const cmY1 = 880, cmY2 = 960;
+    const cma1 = this.worldToScreen(acX2, cmY1, 0);
+    const cma2 = this.worldToScreen(1920, cmY1, 0);
+    const cma3 = this.worldToScreen(1920, cmY2, 0);
+    const cma4 = this.worldToScreen(acX2, cmY2, 0);
+
+    ctx.fillStyle = '#231d27';
+    ctx.beginPath();
+    ctx.moveTo(cma1.x, cma1.y); ctx.lineTo(cma2.x, cma2.y); ctx.lineTo(cma3.x, cma3.y); ctx.lineTo(cma4.x, cma4.y);
+    ctx.closePath(); ctx.fill();
+
+    ctx.strokeStyle = '#382f40';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cma1.x, cma1.y); ctx.lineTo(cma2.x, cma2.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cma4.x, cma4.y); ctx.lineTo(cma3.x, cma3.y); ctx.stroke();
+
+    // 5) Carré Militaire Sector Clearing (Lots 38, 38bis, 39)
+    // Crushed pale gravel / limestone military court
+    const mp1 = this.worldToScreen(1460, 760, 0);
+    const mp2 = this.worldToScreen(1900, 760, 0);
+    const mp3 = this.worldToScreen(1900, 1080, 0);
+    const mp4 = this.worldToScreen(1460, 1080, 0);
+
+    ctx.fillStyle = '#201b24';
+    ctx.beginPath();
+    ctx.moveTo(mp1.x, mp1.y); ctx.lineTo(mp2.x, mp2.y); ctx.lineTo(mp3.x, mp3.y); ctx.lineTo(mp4.x, mp4.y);
+    ctx.closePath(); ctx.fill();
+
+    ctx.strokeStyle = '#42384a';
+    ctx.lineWidth = 2.4;
+    ctx.stroke();
+
+    // Central ceremonial star/roundel on Carré Militaire around Monument
+    const mCenter = this.worldToScreen(1680, 920, 0);
+    ctx.fillStyle = '#292230';
+    ctx.beginPath();
+    ctx.ellipse(mCenter.x, mCenter.y, 42, 21, 0, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = '#5a4c64'; ctx.lineWidth = 1.4; ctx.stroke();
+
+    // 6) Winding Laterite Footpaths ("Elakelan-trano Fasana" - OSM Way 1291650717)
+    // Connecting the Merina family vaults in the West sector
+    const westPathNodes = [
+      { x: acX1, y: 580 },
+      { x: 800, y: 620 },
+      { x: 580, y: 840 },
+      { x: 380, y: 1040 },
+      { x: 560, y: 1360 },
+      { x: 740, y: 1560 },
+      { x: acX1 + 50, y: 1720 },
     ];
-    for (const m of manholes) {
-      const pos = this.worldToScreen(m.x, m.y, 0);
-      ctx.fillStyle = '#1c1626';
-      ctx.beginPath(); ctx.ellipse(pos.x, pos.y, 11, 5.5, 0, 0, TAU); ctx.fill();
-      ctx.strokeStyle = '#322642'; ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.strokeStyle = 'rgba(48, 22, 16, 0.7)';
+    ctx.lineWidth = 32;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < westPathNodes.length; i++) {
+      const pt = this.worldToScreen(westPathNodes[i].x, westPathNodes[i].y, 0);
+      if (i === 0) ctx.moveTo(pt.x, pt.y);
+      else ctx.lineTo(pt.x, pt.y);
+    }
+    ctx.stroke();
+
+    // Inner path core (worn down by generations of Famadihana processions)
+    ctx.strokeStyle = 'rgba(64, 28, 20, 0.85)';
+    ctx.lineWidth = 18;
+    ctx.stroke();
+
+    // 7) Fallen Jacaranda Petal Carpets
+    // Under each Jacaranda tree across the cemetery
+    const jacarandaLocs = [
+      { x: 950, y: 840 }, { x: 1260, y: 640 }, { x: 960, y: 1520 }, { x: 1270, y: 1380 },
+      { x: 540, y: 600 }, { x: 310, y: 880 }, { x: 630, y: 1180 }, { x: 340, y: 1340 },
+      { x: 650, y: 1560 }, { x: 1600, y: 1240 }, { x: 1820, y: 1520 }, { x: 1690, y: 1720 }
+    ];
+    for (const j of jacarandaLocs) {
+      const pos = this.worldToScreen(j.x, j.y, 0);
+      if (pos.x < -80 || pos.x > w + 80 || pos.y < -80 || pos.y > h + 80) continue;
+      // Soft purple ground halo
+      ctx.fillStyle = 'rgba(150, 95, 210, 0.16)';
+      ctx.beginPath();
+      ctx.ellipse(pos.x, pos.y + 4, 34, 17, 0, 0, TAU);
+      ctx.fill();
+
+      // Petal flecks
+      ctx.fillStyle = 'rgba(176, 118, 235, 0.45)';
+      for (let k = 0; k < 12; k++) {
+        const offX = Math.sin(k * 1.9 + j.x) * 26;
+        const offY = Math.cos(k * 2.3 + j.y) * 13 + 4;
+        ctx.beginPath();
+        ctx.ellipse(pos.x + offX, pos.y + offY, 2.2, 1.2, 0.4, 0, TAU);
+        ctx.fill();
+      }
     }
 
-    // Persistent 2.5D Blood Decals on the Pavement
+    // 8) Persistent Blood Decals soaking into laterite earth and cobblestone
     for (const dec of this.decals) {
       const pos = this.worldToScreen(dec.x, dec.y, 0);
       if (pos.x < -60 || pos.x > w + 60 || pos.y < -60 || pos.y > h + 60) continue;
@@ -1110,24 +1194,24 @@ export class Game {
     ctx.globalAlpha = 1;
   }
 
-  // ── Atmospheric Particles & Embers ─────────────────────────────────────────
+  // ── Atmospheric Particles & Embers (Highland Madagascar) ─────────────────
   drawAtmosphere(ctx) {
     const { w, h } = this;
 
-    // Drifting city fog
-    const fogSpr = getGlow('#3a2d55');
-    ctx.globalAlpha = 0.09;
+    // Drifting highland mist (Zavona d'Antananarivo)
+    const fogSpr = getGlow('#3a2436');
+    ctx.globalAlpha = 0.085;
     for (const f of this.fog) {
       ctx.drawImage(fogSpr, f.x - f.r, f.y - f.r, f.r * 2, f.r * 2);
     }
     ctx.globalAlpha = 1;
 
-    // Ambient supernatural embers
+    // Ambient floating jacaranda petals and laterite red dust motes
     ctx.globalCompositeOperation = 'lighter';
     for (const em of this.embers) {
       const x = em.x * w, y = em.y * h;
       ctx.globalAlpha = em.a * (0.6 + 0.4 * Math.sin(this.t * 3 + em.drift));
-      ctx.fillStyle = '#ff9d3d';
+      ctx.fillStyle = em.col || '#ff9d3d';
       ctx.fillRect(x, y, em.s, em.s);
     }
     ctx.globalCompositeOperation = 'source-over';
